@@ -30,6 +30,22 @@ export default function AuthenticatedLayout({ header, children }) {
                                 >
                                     Dashboard
                                 </NavLink>
+                                {user.role === 'agent' && (
+                                    <>
+                                        <NavLink
+                                            href={route('properties.create')}
+                                            active={route().current('properties.create')}
+                                        >
+                                            Post Property
+                                        </NavLink>
+                                        <NavLink
+                                            href={route('properties.my')}
+                                            active={route().current('properties.my')}
+                                        >
+                                            My Properties
+                                        </NavLink>
+                                    </>
+                                )}
                             </div>
                         </div>
 
@@ -134,6 +150,22 @@ export default function AuthenticatedLayout({ header, children }) {
                         >
                             Dashboard
                         </ResponsiveNavLink>
+                        {user.role === 'agent' && (
+                            <>
+                                <ResponsiveNavLink
+                                    href={route('properties.create')}
+                                    active={route().current('properties.create')}
+                                >
+                                    Post Property
+                                </ResponsiveNavLink>
+                                <ResponsiveNavLink
+                                    href={route('properties.my')}
+                                    active={route().current('properties.my')}
+                                >
+                                    My Properties
+                                </ResponsiveNavLink>
+                            </>
+                        )}
                     </div>
 
                     <div className="border-t border-gray-200 pb-1 pt-4">
