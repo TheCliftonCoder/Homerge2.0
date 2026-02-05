@@ -41,7 +41,29 @@ class LoginRequest extends FormRequest
     {
         $this->ensureIsNotRateLimited();
 
-        if (! Auth::attempt($this->only('email', 'password'), $this->boolean('remember'))) {
+        // Check if this email has a pending agent request
+        $pendingRequest = \App\Models\AgentRequest::where('email', $this->email)
+            ->where('status', 'pending')
+            ->first();
+
+        if ($pendingRequest) {
+            throw ValidationException::withMessages([
+                'email' => 'Your agent account request is pending approval. You will be notified once approved.',
+            ]);
+        }
+
+        // Check if this email has a declined agent request
+        $declinedRequest = \App\Models\AgentRequest::where('email', $this->email)
+            ->where('status', 'declined')
+            ->first();
+
+        if ($declinedRequest) {
+            throw ValidationException::withMessages([
+                'email' => 'Your agent account request was declined. Please contact support for more information.',
+            ]);
+        }
+
+        if (!Auth::attempt($this->only('email', 'password'), $this->boolean('remember'))) {
             RateLimiter::hit($this->throttleKey());
 
             throw ValidationException::withMessages([
@@ -59,7 +81,7 @@ class LoginRequest extends FormRequest
      */
     public function ensureIsNotRateLimited(): void
     {
-        if (! RateLimiter::tooManyAttempts($this->throttleKey(), 5)) {
+        if (!RateLimiter::tooManyAttempts($this->throttleKey(), 5)) {
             return;
         }
 
@@ -80,6 +102,6 @@ class LoginRequest extends FormRequest
      */
     public function throttleKey(): string
     {
-        return Str::transliterate(Str::lower($this->string('email')).'|'.$this->ip());
+        return Str::transliterate(Str::lower($this->string('email')) . '|' . $this->ip());
     }
 }

@@ -32,14 +32,29 @@ class RegisteredUserController extends Controller
     {
         $request->validate([
             'name' => 'required|string|max:255',
-            'email' => 'required|string|lowercase|email|max:255|unique:'.User::class,
+            'email' => 'required|string|lowercase|email|max:255|unique:'.User::class.'|unique:agent_requests',
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
+            'role' => 'required|in:applicant,agent',
         ]);
 
+        // If registering as agent, create a pending request instead of user account
+        if ($request->role === 'agent') {
+            \App\Models\AgentRequest::create([
+                'name' => $request->name,
+                'email' => $request->email,
+                'password' => Hash::make($request->password),
+                'status' => 'pending',
+            ]);
+
+            return redirect(route('login'))->with('status', 'Your agent account request has been submitted. You will be notified once approved.');
+        }
+
+        // For applicants, create user account immediately
         $user = User::create([
             'name' => $request->name,
             'email' => $request->email,
             'password' => Hash::make($request->password),
+            'role' => $request->role,
         ]);
 
         event(new Registered($user));
