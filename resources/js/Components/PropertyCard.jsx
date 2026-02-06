@@ -47,22 +47,33 @@ export default function PropertyCard({ property }) {
             {/* Top Legend */}
             <div className="relative border-b-2 border-indigo-100 bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50 px-8 py-6">
                 <div className="flex items-center justify-between gap-4">
-                    <h3 className="bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-3xl font-bold text-transparent">
-                        {property.name}
-                    </h3>
-                    <div className="flex flex-col items-end">
-                        <span className="bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-4xl font-extrabold text-transparent">
-                            {formatPrice(property.price)}
+                    <div className="flex items-center gap-2.5">
+                        <svg
+                            className="h-7 w-7 text-indigo-600"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                        >
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+                            />
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+                            />
+                        </svg>
+                        <span className="text-2xl font-bold text-gray-900">
+                            {property.location}
                         </span>
-                        {images.length > 0 && (
-                            <span className="mt-1 flex items-center gap-1 text-sm text-gray-500">
-                                <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" />
-                                </svg>
-                                {images.length} {images.length === 1 ? 'photo' : 'photos'}
-                            </span>
-                        )}
                     </div>
+                    <span className="bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-4xl font-extrabold text-transparent">
+                        {formatPrice(property.price)}
+                    </span>
                 </div>
             </div>
 
@@ -130,8 +141,8 @@ export default function PropertyCard({ property }) {
                                                 setCurrentImageIndex(index)
                                             }
                                             className={`h-3.5 w-3.5 rounded-full transition-all duration-300 ${index === currentImageIndex
-                                                    ? 'w-10 bg-white shadow-lg'
-                                                    : 'bg-white/60 hover:bg-white/80 hover:scale-110'
+                                                ? 'w-10 bg-white shadow-lg'
+                                                : 'bg-white/60 hover:bg-white/80 hover:scale-110'
                                                 }`}
                                             aria-label={`Go to image ${index + 1}`}
                                         />
@@ -169,32 +180,10 @@ export default function PropertyCard({ property }) {
 
             {/* Bottom Legend */}
             <div className="relative space-y-4 bg-gradient-to-b from-white to-gray-50 p-8">
-                <div className="flex items-center gap-8 text-lg">
-                    <div className="flex items-center gap-2.5 rounded-full bg-indigo-50 px-4 py-2 text-indigo-700 transition-colors hover:bg-indigo-100">
+                <div className="flex items-center justify-center">
+                    <div className="flex items-center gap-2.5 rounded-full bg-purple-50 px-6 py-3 text-purple-700 transition-colors hover:bg-purple-100">
                         <svg
-                            className="h-6 w-6"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                        >
-                            <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-                            />
-                            <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-                            />
-                        </svg>
-                        <span className="font-semibold">{property.location}</span>
-                    </div>
-                    <div className="flex items-center gap-2.5 rounded-full bg-purple-50 px-4 py-2 text-purple-700 transition-colors hover:bg-purple-100">
-                        <svg
-                            className="h-6 w-6"
+                            className="h-7 w-7"
                             fill="none"
                             stroke="currentColor"
                             viewBox="0 0 24 24"
@@ -206,7 +195,7 @@ export default function PropertyCard({ property }) {
                                 d="M4 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-3zM14 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1h-4a1 1 0 01-1-1v-3z"
                             />
                         </svg>
-                        <span className="font-bold">{property.size_sqft.toLocaleString()} sqft</span>
+                        <span className="text-xl font-bold">{property.size_sqft.toLocaleString()} sqft</span>
                     </div>
                 </div>
 
