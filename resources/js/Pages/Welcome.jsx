@@ -56,10 +56,16 @@ export default function Welcome({ auth }) {
                         </p>
                         <div className="flex justify-center gap-4">
                             <Link
-                                href={route('properties.index')}
-                                className="rounded-lg bg-indigo-600 px-8 py-4 text-lg font-semibold text-white shadow-lg transition hover:bg-indigo-500 hover:shadow-xl"
+                                href={route('properties.search')}
+                                className="rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 px-8 py-4 text-lg font-semibold text-white shadow-lg transition hover:from-indigo-700 hover:to-purple-700 hover:shadow-xl"
                             >
-                                View Properties
+                                Search Properties
+                            </Link>
+                            <Link
+                                href={route('properties.index')}
+                                className="rounded-lg border-2 border-indigo-600 px-8 py-4 text-lg font-semibold text-indigo-600 shadow-lg transition hover:bg-indigo-50 hover:shadow-xl"
+                            >
+                                View All Properties
                             </Link>
                         </div>
                     </div>

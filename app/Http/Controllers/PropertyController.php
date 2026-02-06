@@ -53,6 +53,128 @@ class PropertyController extends Controller
     }
 
     /**
+     * Search properties with filters.
+     */
+    public function search(Request $request): Response
+    {
+        $query = GeneralProperty::with(['agent', 'images', 'propertyCategory.transaction']);
+
+        // Basic Filters
+        if ($request->filled('location')) {
+            $query->where('location', 'like', '%' . $request->location . '%');
+        }
+
+        if ($request->filled('min_price')) {
+            $query->where('price', '>=', $request->min_price);
+        }
+
+        if ($request->filled('max_price')) {
+            $query->where('price', '<=', $request->max_price);
+        }
+
+        if ($request->filled('property_category')) {
+            $query->where('property_category_type', 'like', '%' . $request->property_category . '%');
+        }
+
+        // Size filters
+        if ($request->filled('min_size')) {
+            $query->where('size_sqft', '>=', $request->min_size);
+        }
+
+        if ($request->filled('max_size')) {
+            $query->where('size_sqft', '<=', $request->max_size);
+        }
+
+        // Category-specific filters (Residential)
+        if ($request->filled('bedrooms')) {
+            $query->whereHas('propertyCategory', function ($q) use ($request) {
+                $q->where('property_category_type', 'like', '%ResidentialProperty%')
+                    ->where('bedrooms', '>=', $request->bedrooms);
+            });
+        }
+
+        if ($request->filled('bathrooms')) {
+            $query->whereHas('propertyCategory', function ($q) use ($request) {
+                $q->where('property_category_type', 'like', '%ResidentialProperty%')
+                    ->where('bathrooms', '>=', $request->bathrooms);
+            });
+        }
+
+        if ($request->filled('parking')) {
+            $query->whereHas('propertyCategory', function ($q) use ($request) {
+                $q->where('property_category_type', 'like', '%ResidentialProperty%')
+                    ->where('parking', $request->parking);
+            });
+        }
+
+        if ($request->filled('garden')) {
+            $query->whereHas('propertyCategory', function ($q) use ($request) {
+                $q->where('property_category_type', 'like', '%ResidentialProperty%')
+                    ->where('garden', $request->garden === 'true' || $request->garden === '1');
+            });
+        }
+
+        if ($request->filled('property_type')) {
+            $query->whereHas('propertyCategory', function ($q) use ($request) {
+                $q->where('property_type', $request->property_type);
+            });
+        }
+
+        // Transaction-specific filters
+        if ($request->filled('transaction_type')) {
+            $query->whereHas('propertyCategory.transaction', function ($q) use ($request) {
+                $q->where('transaction_type', 'like', '%' . $request->transaction_type . '%');
+            });
+        }
+
+        // Sales-specific filters
+        if ($request->filled('tenure')) {
+            $query->whereHas('propertyCategory.transaction', function ($q) use ($request) {
+                $q->where('transaction_type', 'like', '%SalesProperty%')
+                    ->where('tenure', $request->tenure);
+            });
+        }
+
+        // Rental-specific filters
+        if ($request->filled('furnished')) {
+            $query->whereHas('propertyCategory.transaction', function ($q) use ($request) {
+                $q->where('transaction_type', 'like', '%RentalProperty%')
+                    ->where('furnished', $request->furnished);
+            });
+        }
+
+        if ($request->filled('pets_allowed')) {
+            $query->whereHas('propertyCategory.transaction', function ($q) use ($request) {
+                $q->where('transaction_type', 'like', '%RentalProperty%')
+                    ->where('pets_allowed', $request->pets_allowed === 'true' || $request->pets_allowed === '1');
+            });
+        }
+
+        if ($request->filled('available_from')) {
+            $query->whereHas('propertyCategory.transaction', function ($q) use ($request) {
+                $q->where('transaction_type', 'like', '%RentalProperty%')
+                    ->where('available_date', '>=', $request->available_from);
+            });
+        }
+
+        // Order by most recent
+        $query->orderBy('created_at', 'desc');
+
+        // Paginate results
+        $properties = $query->paginate(12)->withQueryString();
+
+        return Inertia::render('Properties/Search', [
+            'properties' => $properties,
+            'filters' => $request->only([
+                'location', 'min_price', 'max_price', 'property_category', 'transaction_type',
+                'bedrooms', 'bathrooms', 'property_type', 'parking', 'garden',
+                'min_size', 'max_size', 'tenure', 'furnished', 'pets_allowed', 'available_from'
+            ]),
+        ]);
+    }
+
+
+    /**
      * Store a newly created property.
      */
     public function store(Request $request): RedirectResponse

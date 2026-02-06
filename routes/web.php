@@ -20,6 +20,7 @@ Route::get('/dashboard', function () {
 
 // Public properties listing (no auth required)
 Route::get('/properties', [\App\Http\Controllers\PropertyController::class , 'index'])->name('properties.index');
+Route::get('/search', [\App\Http\Controllers\PropertyController::class , 'search'])->name('properties.search');
 
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class , 'edit'])->name('profile.edit');
