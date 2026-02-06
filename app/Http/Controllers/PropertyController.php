@@ -41,6 +41,18 @@ class PropertyController extends Controller
     }
 
     /**
+     * Display a single property with all details.
+     */
+    public function show(GeneralProperty $property): Response
+    {
+        $property->load(['agent', 'images', 'propertyCategory.transaction']);
+
+        return Inertia::render('Properties/Show', [
+            'property' => $property,
+        ]);
+    }
+
+    /**
      * Store a newly created property.
      */
     public function store(Request $request): RedirectResponse

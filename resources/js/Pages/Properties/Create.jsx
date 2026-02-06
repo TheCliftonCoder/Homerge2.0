@@ -81,6 +81,15 @@ export default function Create() {
         setImagePreviews(newPreviews);
     };
 
+    const handleCategoryChange = (category) => {
+        setData({
+            ...data,
+            property_category: category,
+            // Reset property_type to appropriate default for the category
+            property_type: category === 'residential' ? 'detached' : 'retail',
+        });
+    };
+
     const submit = (e) => {
         e.preventDefault();
         post(route('properties.store'));
@@ -139,7 +148,7 @@ export default function Create() {
                                                 type="radio"
                                                 value="residential"
                                                 checked={data.property_category === 'residential'}
-                                                onChange={(e) => setData('property_category', e.target.value)}
+                                                onChange={(e) => handleCategoryChange(e.target.value)}
                                                 className="mr-2"
                                             />
                                             <span className="font-medium">Residential</span>
@@ -149,7 +158,7 @@ export default function Create() {
                                                 type="radio"
                                                 value="commercial"
                                                 checked={data.property_category === 'commercial'}
-                                                onChange={(e) => setData('property_category', e.target.value)}
+                                                onChange={(e) => handleCategoryChange(e.target.value)}
                                                 className="mr-2"
                                             />
                                             <span className="font-medium">Commercial</span>

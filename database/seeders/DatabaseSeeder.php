@@ -20,5 +20,8 @@ class DatabaseSeeder extends Seeder
             'password' => Hash::make('admin'),
             'role' => 'admin',
         ]);
+
+        // Seed properties with test data
+        $this->call(PropertySeeder::class);
     }
 }

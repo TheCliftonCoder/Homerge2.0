@@ -216,6 +216,14 @@ export default function PropertyCard({ property }) {
                         <p className="text-base font-semibold text-gray-700">{formatDate(property.created_at)}</p>
                     </div>
                 </div>
+
+                {/* View Details Button */}
+                <a
+                    href={`/properties/${property.id}`}
+                    className="mt-4 block w-full rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-4 text-center text-xl font-bold text-white shadow-lg transition-all duration-300 hover:from-indigo-700 hover:to-purple-700 hover:shadow-xl hover:scale-105"
+                >
+                    View Details
+                </a>
             </div>
         </div>
     );

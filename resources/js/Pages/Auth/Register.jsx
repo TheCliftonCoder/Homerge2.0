@@ -90,42 +90,6 @@ export default function Register() {
                 </div>
 
                 <div className="mt-4">
-                    <InputLabel value="I am registering as:" />
-
-                    <div className="mt-2 flex gap-6">
-                        <label className="flex items-center">
-                            <input
-                                type="radio"
-                                name="role"
-                                value="applicant"
-                                checked={data.role === 'applicant'}
-                                onChange={(e) => setData('role', e.target.value)}
-                                className="rounded border-gray-300 text-indigo-600 shadow-sm focus:ring-indigo-500"
-                            />
-                            <span className="ms-2 text-sm text-gray-600">
-                                Applicant
-                            </span>
-                        </label>
-
-                        <label className="flex items-center">
-                            <input
-                                type="radio"
-                                name="role"
-                                value="agent"
-                                checked={data.role === 'agent'}
-                                onChange={(e) => setData('role', e.target.value)}
-                                className="rounded border-gray-300 text-indigo-600 shadow-sm focus:ring-indigo-500"
-                            />
-                            <span className="ms-2 text-sm text-gray-600">
-                                Agent
-                            </span>
-                        </label>
-                    </div>
-
-                    <InputError message={errors.role} className="mt-2" />
-                </div>
-
-                <div className="mt-4">
                     <InputLabel htmlFor="password" value="Password" />
 
                     <TextInput

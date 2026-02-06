@@ -31,14 +31,17 @@ Route::middleware('auth')->group(function () {
     Route::post('/admin/approve/{id}', [\App\Http\Controllers\AdminController::class , 'approveAgent'])->name('admin.approve');
     Route::post('/admin/decline/{id}', [\App\Http\Controllers\AdminController::class , 'declineAgent'])->name('admin.decline');
 
-    // Property routes (agent only)
+    // Property routes (agent only) - SPECIFIC ROUTES FIRST
     Route::get('/properties/create', [\App\Http\Controllers\PropertyController::class , 'create'])->name('properties.create');
     Route::post('/properties', [\App\Http\Controllers\PropertyController::class , 'store'])->name('properties.store');
     Route::get('/my-properties', [\App\Http\Controllers\PropertyController::class , 'myProperties'])->name('properties.my');
-    Route::get('/properties/{id}/edit', [\App\Http\Controllers\PropertyController::class , 'edit'])->name('properties.edit');
-    Route::put('/properties/{id}', [\App\Http\Controllers\PropertyController::class , 'update'])->name('properties.update');
-    Route::delete('/properties/{id}', [\App\Http\Controllers\PropertyController::class , 'destroy'])->name('properties.destroy');
+    Route::get('/properties/{property}/edit', [\App\Http\Controllers\PropertyController::class , 'edit'])->name('properties.edit');
+    Route::put('/properties/{property}', [\App\Http\Controllers\PropertyController::class , 'update'])->name('properties.update');
+    Route::delete('/properties/{property}', [\App\Http\Controllers\PropertyController::class , 'destroy'])->name('properties.destroy');
     Route::delete('/properties/{propertyId}/images/{imageId}', [\App\Http\Controllers\PropertyController::class , 'deleteImage'])->name('properties.images.delete');
 });
+
+// Public property details - MUST come after /properties/create to avoid conflict
+Route::get('/properties/{property}', [\App\Http\Controllers\PropertyController::class , 'show'])->name('properties.show');
 
 require __DIR__ . '/auth.php';
