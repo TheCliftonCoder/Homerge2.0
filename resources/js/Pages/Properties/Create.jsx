@@ -57,6 +57,15 @@ export default function Create() {
             return;
         }
 
+        // Check file sizes (5MB = 5 * 1024 * 1024 bytes)
+        const maxSize = 5 * 1024 * 1024;
+        const oversizedFiles = files.filter(file => file.size > maxSize);
+
+        if (oversizedFiles.length > 0) {
+            alert(`${oversizedFiles.length} image(s) exceed the 5MB limit. Please choose smaller files.`);
+            return;
+        }
+
         setData('images', files);
 
         // Create preview URLs
@@ -94,6 +103,32 @@ export default function Create() {
                 <div className="mx-auto max-w-3xl sm:px-6 lg:px-8">
                     <div className="overflow-hidden bg-white shadow-sm sm:rounded-lg">
                         <form onSubmit={submit} className="p-6">
+                            {/* Error Display Banner */}
+                            {(errors.error || Object.keys(errors).length > 0) && (
+                                <div className="mb-6 rounded-lg border-2 border-red-200 bg-red-50 p-4">
+                                    <div className="flex items-start">
+                                        <svg className="h-6 w-6 flex-shrink-0 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        <div className="ml-3 flex-1">
+                                            <h3 className="text-lg font-bold text-red-800">
+                                                {errors.error ? 'Upload Failed' : 'Please Fix the Following Errors'}
+                                            </h3>
+                                            {errors.error && (
+                                                <p className="mt-2 text-sm text-red-700">{errors.error}</p>
+                                            )}
+                                            {!errors.error && Object.keys(errors).length > 0 && (
+                                                <ul className="mt-2 list-inside list-disc space-y-1 text-sm text-red-700">
+                                                    {Object.values(errors).map((error, index) => (
+                                                        <li key={index}>{error}</li>
+                                                    ))}
+                                                </ul>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="space-y-6">
                                 {/* Property Category Selection */}
                                 <div className="rounded-lg border-2 border-indigo-200 bg-indigo-50 p-4">
@@ -541,7 +576,7 @@ export default function Create() {
 
                                 {/* Property Images */}
                                 <div>
-                                    <InputLabel htmlFor="images" value="Property Images (Max 10)" />
+                                    <InputLabel htmlFor="images" value="Property Images (Max 10, 5MB each)" />
                                     <input
                                         id="images"
                                         type="file"
@@ -551,7 +586,7 @@ export default function Create() {
                                         className="mt-1 block w-full rounded-md border-gray-300 text-sm file:mr-4 file:rounded-md file:border-0 file:bg-indigo-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-indigo-700 hover:file:bg-indigo-100"
                                     />
                                     <p className="mt-1 text-sm text-gray-500">
-                                        {data.images.length}/10 images selected
+                                        {data.images.length}/10 images selected • Max 5MB per image
                                     </p>
                                     <InputError message={errors.images} className="mt-2" />
 

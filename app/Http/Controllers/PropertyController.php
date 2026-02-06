@@ -12,6 +12,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -44,108 +45,135 @@ class PropertyController extends Controller
      */
     public function store(Request $request): RedirectResponse
     {
-        // Base validation
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'price' => 'required|numeric|min:0',
-            'location' => 'required|string|max:255',
-            'size_sqft' => 'required|integer|min:1',
-            'description' => 'nullable|string',
-            'property_category' => 'required|in:residential,commercial',
-            'transaction_type' => 'required|in:sale,rental',
-            'images' => 'nullable|array|max:10',
-            'images.*' => 'image|mimes:jpeg,png,jpg|max:2048',
-        ]);
-
-        // Category-specific validation
-        if ($validated['property_category'] === 'residential') {
-            $categoryData = $request->validate([
-                'bedrooms' => 'required|integer|min:0',
-                'bathrooms' => 'required|integer|min:0',
-                'council_tax_band' => 'nullable|string|max:1',
-                'parking' => 'required|in:none,street,driveway,garage',
-                'garden' => 'required|boolean',
-                'property_type' => 'required|in:detached,semi_detached,terraced,flat,bungalow',
-                'access' => 'nullable|string',
+        try {
+            // Base validation with custom error messages
+            $validated = $request->validate([
+                'name' => 'required|string|max:255',
+                'price' => 'required|numeric|min:0',
+                'location' => 'required|string|max:255',
+                'size_sqft' => 'required|integer|min:1',
+                'description' => 'nullable|string',
+                'property_category' => 'required|in:residential,commercial',
+                'transaction_type' => 'required|in:sale,rental',
+                'images' => 'nullable|array|max:10',
+                'images.*' => 'image|mimes:jpeg,png,jpg|max:5120', // 5MB per image
+            ], [
+                'images.*.max' => 'Each image must not exceed 5MB.',
+                'images.*.image' => 'All files must be valid images.',
+                'images.*.mimes' => 'Images must be in JPEG, PNG, or JPG format.',
+                'images.max' => 'You can upload a maximum of 10 images.',
             ]);
-        }
-        else {
-            $categoryData = $request->validate([
-                'property_type' => 'required|in:retail,leisure,industrial,land_development,other',
-            ]);
-        }
 
-        // Transaction-specific validation
-        if ($validated['transaction_type'] === 'sale') {
-            $transactionData = $request->validate([
-                'tenure' => 'required|in:freehold,leasehold,share_of_freehold',
-                'lease_years_remaining' => 'nullable|integer|min:0',
-                'ground_rent' => 'nullable|numeric|min:0',
-                'service_charge' => 'nullable|numeric|min:0',
-            ]);
-        }
-        else {
-            $transactionData = $request->validate([
-                'available_date' => 'required|date',
-                'deposit' => 'required|numeric|min:0',
-                'min_tenancy_months' => 'required|integer|min:1',
-                'let_type' => 'required|in:long_term,short_term,corporate',
-                'furnished' => 'required|in:unfurnished,part_furnished,furnished',
-                'bills_included' => 'required|boolean',
-                'pets_allowed' => 'required|boolean',
-            ]);
-        }
-
-        // Create property in transaction
-        DB::transaction(function () use ($validated, $categoryData, $transactionData, $request) {
-            // 1. Create transaction record (Sales or Rental)
-            if ($validated['transaction_type'] === 'sale') {
-                $transaction = SalesProperty::create($transactionData);
-                $transactionType = SalesProperty::class;
-            }
-            else {
-                $transaction = RentalProperty::create($transactionData);
-                $transactionType = RentalProperty::class;
-            }
-
-            // 2. Create category record (Residential or Commercial)
-            $categoryData['transaction_type'] = $transactionType;
-            $categoryData['transaction_id'] = $transaction->id;
-
+            // Category-specific validation
             if ($validated['property_category'] === 'residential') {
-                $category = ResidentialProperty::create($categoryData);
-                $categoryType = ResidentialProperty::class;
+                $categoryData = $request->validate([
+                    'bedrooms' => 'required|integer|min:0',
+                    'bathrooms' => 'required|integer|min:0',
+                    'council_tax_band' => 'nullable|string|max:1',
+                    'parking' => 'required|in:none,street,driveway,garage',
+                    'garden' => 'required|boolean',
+                    'property_type' => 'required|in:detached,semi_detached,terraced,flat,bungalow',
+                    'access' => 'nullable|string',
+                ]);
             }
             else {
-                $category = CommercialProperty::create($categoryData);
-                $categoryType = CommercialProperty::class;
+                $categoryData = $request->validate([
+                    'property_type' => 'required|in:retail,leisure,industrial,land_development,other',
+                ]);
             }
 
-            // 3. Create general property record
-            $generalProperty = GeneralProperty::create([
-                'agent_id' => Auth::id(),
-                'name' => $validated['name'],
-                'location' => $validated['location'],
-                'price' => $validated['price'],
-                'size_sqft' => $validated['size_sqft'],
-                'description' => $validated['description'] ?? null,
-                'property_category_type' => $categoryType,
-                'property_category_id' => $category->id,
+            // Transaction-specific validation
+            if ($validated['transaction_type'] === 'sale') {
+                $transactionData = $request->validate([
+                    'tenure' => 'required|in:freehold,leasehold,share_of_freehold',
+                    'lease_years_remaining' => 'nullable|integer|min:0',
+                    'ground_rent' => 'nullable|numeric|min:0',
+                    'service_charge' => 'nullable|numeric|min:0',
+                ]);
+            }
+            else {
+                $transactionData = $request->validate([
+                    'available_date' => 'required|date',
+                    'deposit' => 'required|numeric|min:0',
+                    'min_tenancy_months' => 'required|integer|min:1',
+                    'let_type' => 'required|in:long_term,short_term,corporate',
+                    'furnished' => 'required|in:unfurnished,part_furnished,furnished',
+                    'bills_included' => 'required|boolean',
+                    'pets_allowed' => 'required|boolean',
+                ]);
+            }
+
+            // Create property in transaction
+            DB::transaction(function () use ($validated, $categoryData, $transactionData, $request) {
+                // 1. Create transaction record (Sales or Rental)
+                if ($validated['transaction_type'] === 'sale') {
+                    $transaction = SalesProperty::create($transactionData);
+                    $transactionType = SalesProperty::class;
+                }
+                else {
+                    $transaction = RentalProperty::create($transactionData);
+                    $transactionType = RentalProperty::class;
+                }
+
+                // 2. Create category record (Residential or Commercial)
+                $categoryData['transaction_type'] = $transactionType;
+                $categoryData['transaction_id'] = $transaction->id;
+
+                if ($validated['property_category'] === 'residential') {
+                    $category = ResidentialProperty::create($categoryData);
+                    $categoryType = ResidentialProperty::class;
+                }
+                else {
+                    $category = CommercialProperty::create($categoryData);
+                    $categoryType = CommercialProperty::class;
+                }
+
+                // 3. Create general property record
+                $generalProperty = GeneralProperty::create([
+                    'agent_id' => Auth::id(),
+                    'name' => $validated['name'],
+                    'location' => $validated['location'],
+                    'price' => $validated['price'],
+                    'size_sqft' => $validated['size_sqft'],
+                    'description' => $validated['description'] ?? null,
+                    'property_category_type' => $categoryType,
+                    'property_category_id' => $category->id,
+                ]);
+
+                // 4. Handle image uploads
+                if ($request->hasFile('images')) {
+                    foreach ($request->file('images') as $index => $image) {
+                        if (!$image->isValid()) {
+                            throw new \Exception('One or more images failed to upload. Please check file sizes and formats.');
+                        }
+
+                        $path = $image->store('properties/' . $generalProperty->id, 'public');
+                        $generalProperty->images()->create([
+                            'image_path' => $path,
+                            'order' => $index + 1,
+                        ]);
+                    }
+                }
+            });
+
+            return redirect()->route('properties.my')->with('success', 'Property listed successfully!');
+
+        }
+        catch (\Illuminate\Validation\ValidationException $e) {
+            // Validation errors are automatically handled by Laravel
+            throw $e;
+        }
+        catch (\Exception $e) {
+            // Log the error for debugging
+            Log::error('Property creation failed: ' . $e->getMessage(), [
+                'user_id' => Auth::id(),
+                'trace' => $e->getTraceAsString()
             ]);
 
-            // 4. Handle image uploads
-            if ($request->hasFile('images')) {
-                foreach ($request->file('images') as $index => $image) {
-                    $path = $image->store('properties/' . $generalProperty->id, 'public');
-                    $generalProperty->images()->create([
-                        'image_path' => $path,
-                        'order' => $index + 1,
-                    ]);
-                }
-            }
-        });
-
-        return redirect()->route('properties.my')->with('success', 'Property listed successfully!');
+            return back()
+                ->withInput()
+                ->withErrors(['error' => 'Failed to create property: ' . $e->getMessage() . ' Please check your images are under 5MB each and try again.']);
+        }
     }
 
     /**
