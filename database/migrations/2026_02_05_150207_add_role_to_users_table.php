@@ -11,9 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->enum('role', ['admin', 'applicant', 'agent'])->default('applicant')->after('email');
-        });
+        if (!Schema::hasColumn('users', 'role')) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->enum('role', ['admin', 'applicant', 'agent'])->default('applicant')->after('email');
+            });
+        }
     }
 
     /**

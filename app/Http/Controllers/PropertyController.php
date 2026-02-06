@@ -2,10 +2,15 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Property;
+use App\Models\GeneralProperty;
+use App\Models\ResidentialProperty;
+use App\Models\CommercialProperty;
+use App\Models\SalesProperty;
+use App\Models\RentalProperty;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -17,7 +22,7 @@ class PropertyController extends Controller
      */
     public function index(): Response
     {
-        $properties = Property::with(['agent', 'images'])
+        $properties = GeneralProperty::with(['agent', 'images', 'propertyCategory.transaction'])
             ->orderBy('created_at', 'desc')
             ->get();
 
@@ -39,45 +44,116 @@ class PropertyController extends Controller
      */
     public function store(Request $request): RedirectResponse
     {
+        // Base validation
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'price' => 'required|numeric|min:0',
             'location' => 'required|string|max:255',
             'size_sqft' => 'required|integer|min:1',
+            'description' => 'nullable|string',
+            'property_category' => 'required|in:residential,commercial',
+            'transaction_type' => 'required|in:sale,rental',
             'images' => 'nullable|array|max:10',
             'images.*' => 'image|mimes:jpeg,png,jpg|max:2048',
         ]);
 
-        $property = Property::create([
-            'name' => $validated['name'],
-            'price' => $validated['price'],
-            'location' => $validated['location'],
-            'size_sqft' => $validated['size_sqft'],
-            'agent_id' => Auth::id(),
-        ]);
-
-        // Handle image uploads
-        if ($request->hasFile('images')) {
-            foreach ($request->file('images') as $index => $image) {
-                $path = $image->store('properties/' . $property->id, 'public');
-
-                \App\Models\PropertyImage::create([
-                    'property_id' => $property->id,
-                    'image_path' => $path,
-                    'order' => $index + 1,
-                ]);
-            }
+        // Category-specific validation
+        if ($validated['property_category'] === 'residential') {
+            $categoryData = $request->validate([
+                'bedrooms' => 'required|integer|min:0',
+                'bathrooms' => 'required|integer|min:0',
+                'council_tax_band' => 'nullable|string|max:1',
+                'parking' => 'required|in:none,street,driveway,garage',
+                'garden' => 'required|boolean',
+                'property_type' => 'required|in:detached,semi_detached,terraced,flat,bungalow',
+                'access' => 'nullable|string',
+            ]);
         }
+        else {
+            $categoryData = $request->validate([
+                'property_type' => 'required|in:retail,leisure,industrial,land_development,other',
+            ]);
+        }
+
+        // Transaction-specific validation
+        if ($validated['transaction_type'] === 'sale') {
+            $transactionData = $request->validate([
+                'tenure' => 'required|in:freehold,leasehold,share_of_freehold',
+                'lease_years_remaining' => 'nullable|integer|min:0',
+                'ground_rent' => 'nullable|numeric|min:0',
+                'service_charge' => 'nullable|numeric|min:0',
+            ]);
+        }
+        else {
+            $transactionData = $request->validate([
+                'available_date' => 'required|date',
+                'deposit' => 'required|numeric|min:0',
+                'min_tenancy_months' => 'required|integer|min:1',
+                'let_type' => 'required|in:long_term,short_term,corporate',
+                'furnished' => 'required|in:unfurnished,part_furnished,furnished',
+                'bills_included' => 'required|boolean',
+                'pets_allowed' => 'required|boolean',
+            ]);
+        }
+
+        // Create property in transaction
+        DB::transaction(function () use ($validated, $categoryData, $transactionData, $request) {
+            // 1. Create transaction record (Sales or Rental)
+            if ($validated['transaction_type'] === 'sale') {
+                $transaction = SalesProperty::create($transactionData);
+                $transactionType = SalesProperty::class;
+            }
+            else {
+                $transaction = RentalProperty::create($transactionData);
+                $transactionType = RentalProperty::class;
+            }
+
+            // 2. Create category record (Residential or Commercial)
+            $categoryData['transaction_type'] = $transactionType;
+            $categoryData['transaction_id'] = $transaction->id;
+
+            if ($validated['property_category'] === 'residential') {
+                $category = ResidentialProperty::create($categoryData);
+                $categoryType = ResidentialProperty::class;
+            }
+            else {
+                $category = CommercialProperty::create($categoryData);
+                $categoryType = CommercialProperty::class;
+            }
+
+            // 3. Create general property record
+            $generalProperty = GeneralProperty::create([
+                'agent_id' => Auth::id(),
+                'name' => $validated['name'],
+                'location' => $validated['location'],
+                'price' => $validated['price'],
+                'size_sqft' => $validated['size_sqft'],
+                'description' => $validated['description'] ?? null,
+                'property_category_type' => $categoryType,
+                'property_category_id' => $category->id,
+            ]);
+
+            // 4. Handle image uploads
+            if ($request->hasFile('images')) {
+                foreach ($request->file('images') as $index => $image) {
+                    $path = $image->store('properties/' . $generalProperty->id, 'public');
+                    $generalProperty->images()->create([
+                        'image_path' => $path,
+                        'order' => $index + 1,
+                    ]);
+                }
+            }
+        });
 
         return redirect()->route('properties.my')->with('success', 'Property listed successfully!');
     }
 
     /**
-     * Display the authenticated agent's properties.
+     * Display the agent's properties.
      */
     public function myProperties(): Response
     {
-        $properties = Property::with('images')
+        $properties = GeneralProperty::with(['images', 'propertyCategory.transaction'])
             ->where('agent_id', Auth::id())
             ->orderBy('created_at', 'desc')
             ->get();
@@ -88,16 +164,16 @@ class PropertyController extends Controller
     }
 
     /**
-     * Show the form for editing the specified property.
+     * Show the form for editing a property.
      */
-    public function edit($id): Response
+    public function edit(GeneralProperty $property): Response
     {
-        $property = Property::with('images')->findOrFail($id);
-
-        // Authorize: only property owner can edit
+        // Authorization check
         if ($property->agent_id !== Auth::id()) {
             abort(403, 'Unauthorized action.');
         }
+
+        $property->load(['images', 'propertyCategory.transaction']);
 
         return Inertia::render('Properties/Edit', [
             'property' => $property,
@@ -107,50 +183,52 @@ class PropertyController extends Controller
     /**
      * Update the specified property.
      */
-    public function update(Request $request, $id): RedirectResponse
+    public function update(Request $request, GeneralProperty $property): RedirectResponse
     {
-        $property = Property::findOrFail($id);
-
-        // Authorize: only property owner can update
+        // Authorization check
         if ($property->agent_id !== Auth::id()) {
             abort(403, 'Unauthorized action.');
         }
 
+        // Base validation
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'price' => 'required|numeric|min:0',
             'location' => 'required|string|max:255',
             'size_sqft' => 'required|integer|min:1',
-            'images' => 'nullable|array|max:10',
+            'description' => 'nullable|string',
+            'images' => 'nullable|array',
             'images.*' => 'image|mimes:jpeg,png,jpg|max:2048',
         ]);
 
-        $property->update([
-            'name' => $validated['name'],
-            'price' => $validated['price'],
-            'location' => $validated['location'],
-            'size_sqft' => $validated['size_sqft'],
-        ]);
+        DB::transaction(function () use ($property, $validated, $request) {
+            // Update general property
+            $property->update([
+                'name' => $validated['name'],
+                'location' => $validated['location'],
+                'price' => $validated['price'],
+                'size_sqft' => $validated['size_sqft'],
+                'description' => $validated['description'] ?? null,
+            ]);
 
-        // Handle new image uploads
-        if ($request->hasFile('images')) {
-            $currentImageCount = $property->images()->count();
-            $newImagesCount = count($request->file('images'));
+            // Handle new image uploads
+            if ($request->hasFile('images')) {
+                $currentImageCount = $property->images()->count();
+                $newImagesCount = count($request->file('images'));
 
-            if ($currentImageCount + $newImagesCount > 10) {
-                return back()->withErrors(['images' => 'Cannot exceed 10 images per property.']);
+                if ($currentImageCount + $newImagesCount > 10) {
+                    return back()->withErrors(['images' => 'Cannot exceed 10 images per property.']);
+                }
+
+                foreach ($request->file('images') as $index => $image) {
+                    $path = $image->store('properties/' . $property->id, 'public');
+                    $property->images()->create([
+                        'image_path' => $path,
+                        'order' => $currentImageCount + $index + 1,
+                    ]);
+                }
             }
-
-            foreach ($request->file('images') as $index => $image) {
-                $path = $image->store('properties/' . $property->id, 'public');
-
-                \App\Models\PropertyImage::create([
-                    'property_id' => $property->id,
-                    'image_path' => $path,
-                    'order' => $currentImageCount + $index + 1,
-                ]);
-            }
-        }
+        });
 
         return redirect()->route('properties.my')->with('success', 'Property updated successfully!');
     }
@@ -158,51 +236,64 @@ class PropertyController extends Controller
     /**
      * Remove the specified property.
      */
-    public function destroy($id): RedirectResponse
+    public function destroy(GeneralProperty $property): RedirectResponse
     {
-        $property = Property::with('images')->findOrFail($id);
-
-        // Authorize: only property owner can delete
+        // Authorization check
         if ($property->agent_id !== Auth::id()) {
             abort(403, 'Unauthorized action.');
         }
 
-        // Delete all images from storage
-        foreach ($property->images as $image) {
-            \Storage::disk('public')->delete($image->image_path);
-        }
+        DB::transaction(function () use ($property) {
+            // Delete all images from storage
+            foreach ($property->images as $image) {
+                Storage::disk('public')->delete($image->image_path);
+            }
 
-        // Delete property directory if empty
-        $directory = 'properties/' . $property->id;
-        if (\Storage::disk('public')->exists($directory)) {
-            \Storage::disk('public')->deleteDirectory($directory);
-        }
+            // Delete property directory
+            $directory = 'properties/' . $property->id;
+            if (Storage::disk('public')->exists($directory)) {
+                Storage::disk('public')->deleteDirectory($directory);
+            }
 
-        $property->delete();
+            // Delete images from database
+            $property->images()->delete();
+
+            // Load relationships before deletion
+            $category = $property->propertyCategory;
+            if ($category) {
+                $transaction = $category->transaction;
+
+                // Delete in reverse order: general -> category -> transaction
+                $property->delete();
+                $category->delete();
+                if ($transaction) {
+                    $transaction->delete();
+                }
+            }
+            else {
+                $property->delete();
+            }
+        });
 
         return redirect()->route('properties.my')->with('success', 'Property deleted successfully!');
     }
 
     /**
-     * Delete a specific image from a property.
+     * Delete a single image from a property.
      */
-    public function deleteImage($propertyId, $imageId): RedirectResponse
+    public function deleteImage(GeneralProperty $property, $imageId): RedirectResponse
     {
-        $property = Property::findOrFail($propertyId);
-
-        // Authorize: only property owner can delete images
+        // Authorization check
         if ($property->agent_id !== Auth::id()) {
             abort(403, 'Unauthorized action.');
         }
 
-        $image = \App\Models\PropertyImage::where('property_id', $propertyId)
-            ->where('id', $imageId)
-            ->firstOrFail();
+        $image = $property->images()->findOrFail($imageId);
 
         // Delete file from storage
-        \Storage::disk('public')->delete($image->image_path);
+        Storage::disk('public')->delete($image->image_path);
 
-        // Delete database record
+        // Delete from database
         $image->delete();
 
         return back()->with('success', 'Image deleted successfully!');

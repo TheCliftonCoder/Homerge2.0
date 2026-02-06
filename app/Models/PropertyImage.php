@@ -2,21 +2,14 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class PropertyImage extends Model
 {
-    use HasFactory;
+    protected $fillable = ['general_property_id', 'image_path', 'order'];
 
-    protected $fillable = [
-        'property_id',
-        'image_path',
-        'order',
-    ];
-
-    public function property()
+    public function generalProperty()
     {
-        return $this->belongsTo(Property::class);
+        return $this->belongsTo(GeneralProperty::class);
     }
 }
