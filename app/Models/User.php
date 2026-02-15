@@ -46,4 +46,21 @@ class User extends Authenticatable
             'password' => 'hashed',
         ];
     }
+
+    /**
+     * The properties that the user has favourited.
+     */
+    public function favouriteProperties()
+    {
+        return $this->belongsToMany(GeneralProperty::class , 'property_favourites', 'user_id', 'general_property_id')
+            ->withTimestamps();
+    }
+
+    /**
+     * The property enquiries made by the user.
+     */
+    public function propertyEnquiries()
+    {
+        return $this->hasMany(PropertyEnquiry::class);
+    }
 }

@@ -40,7 +40,22 @@ Route::middleware('auth')->group(function () {
     Route::put('/properties/{property}', [\App\Http\Controllers\PropertyController::class , 'update'])->name('properties.update');
     Route::delete('/properties/{property}', [\App\Http\Controllers\PropertyController::class , 'destroy'])->name('properties.destroy');
     Route::delete('/properties/{propertyId}/images/{imageId}', [\App\Http\Controllers\PropertyController::class , 'deleteImage'])->name('properties.images.delete');
-});
+
+    // Applicant-only routes
+    Route::middleware('role:applicant')->group(function () {
+            Route::post('/properties/{property}/favourite', [\App\Http\Controllers\FavouriteController::class , 'toggle'])->name('properties.favourite.toggle');
+            Route::get('/favourites', [\App\Http\Controllers\FavouriteController::class , 'index'])->name('favourites.index');
+            Route::post('/properties/{property}/enquire', [\App\Http\Controllers\EnquiryController::class , 'store'])->name('properties.enquire');
+            Route::get('/enquiries', [\App\Http\Controllers\EnquiryController::class , 'index'])->name('enquiries.index');
+            Route::delete('/enquiries/{enquiry}', [\App\Http\Controllers\EnquiryController::class , 'destroy'])->name('enquiries.destroy');
+        }
+        );
+
+        // Agent-only routes
+        Route::middleware('role:agent')->group(function () {
+            Route::get('/my-enquiries', [\App\Http\Controllers\EnquiryController::class , 'agentEnquiries'])->name('agent.enquiries');
+        }
+        );    });
 
 // Public property details - MUST come after /properties/create to avoid conflict
 Route::get('/properties/{property}', [\App\Http\Controllers\PropertyController::class , 'show'])->name('properties.show');

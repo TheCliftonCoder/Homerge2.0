@@ -47,8 +47,18 @@ class PropertyController extends Controller
     {
         $property->load(['agent', 'images', 'propertyCategory.transaction']);
 
+        // Check if the authenticated user has already enquired about this property
+        $hasEnquired = false;
+        if (Auth::check() && Auth::user()->role === 'applicant') {
+            $hasEnquired = Auth::user()
+                ->propertyEnquiries()
+                ->where('general_property_id', $property->id)
+                ->exists();
+        }
+
         return Inertia::render('Properties/Show', [
             'property' => $property,
+            'hasEnquired' => $hasEnquired,
         ]);
     }
 

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
@@ -47,5 +48,22 @@ class GeneralProperty extends Model
     public function images(): HasMany
     {
         return $this->hasMany(PropertyImage::class)->orderBy('order');
+    }
+
+    /**
+     * Get users who have favourited this property.
+     */
+    public function favouritedBy(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class , 'property_favourites')
+            ->withTimestamps();
+    }
+
+    /**
+     * Get enquiries for this property.
+     */
+    public function enquiries(): HasMany
+    {
+        return $this->hasMany(PropertyEnquiry::class);
     }
 }

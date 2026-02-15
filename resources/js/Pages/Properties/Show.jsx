@@ -1,10 +1,28 @@
 import { useState } from 'react';
-import { Head } from '@inertiajs/react';
+import { Head, router, useForm } from '@inertiajs/react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import GuestLayout from '@/Layouts/GuestLayout';
 
-export default function Show({ auth, property }) {
+export default function Show({ auth, property, hasEnquired = false }) {
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
+    const [showEnquiryForm, setShowEnquiryForm] = useState(false);
+
+    const { data, setData, post, processing, errors, reset } = useForm({
+        message: '',
+        preferred_date: '',
+        contact_phone: '',
+    });
+
+    const handleEnquirySubmit = (e) => {
+        e.preventDefault();
+        post(`/properties/${property.id}/enquire`, {
+            preserveScroll: true,
+            onSuccess: () => {
+                reset();
+                setShowEnquiryForm(false);
+            },
+        });
+    };
 
     const images = property.images || [];
     const hasImages = images.length > 0;
@@ -218,6 +236,86 @@ export default function Show({ auth, property }) {
                                     Contact Agent
                                 </button>
                             </div>
+
+                            {/* Enquire to View - Only for authenticated applicants */}
+                            {auth?.user && auth.user.role === 'applicant' && (
+                                <div className="rounded-2xl bg-white p-6 shadow-xl">
+                                    <h3 className="mb-4 text-xl font-bold text-gray-900">Enquire to View</h3>
+
+                                    {hasEnquired ? (
+                                        <div className="rounded-lg bg-green-50 p-4 text-center">
+                                            <svg className="mx-auto h-12 w-12 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                            <p className="mt-2 font-semibold text-green-700">You've already enquired about this property</p>
+                                        </div>
+                                    ) : !showEnquiryForm ? (
+                                        <button
+                                            onClick={() => setShowEnquiryForm(true)}
+                                            className="w-full rounded-lg bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-3 font-semibold text-white shadow-md transition-all hover:from-green-700 hover:to-emerald-700 hover:shadow-lg"
+                                        >
+                                            Request Viewing
+                                        </button>
+                                    ) : (
+                                        <form onSubmit={handleEnquirySubmit} className="space-y-4">
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700">Message (Optional)</label>
+                                                <textarea
+                                                    value={data.message}
+                                                    onChange={(e) => setData('message', e.target.value)}
+                                                    rows={3}
+                                                    className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                                    placeholder="Any specific requirements or questions..."
+                                                />
+                                                {errors.message && <p className="mt-1 text-sm text-red-600">{errors.message}</p>}
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700">Preferred Viewing Date (Optional)</label>
+                                                <input
+                                                    type="datetime-local"
+                                                    value={data.preferred_date}
+                                                    onChange={(e) => setData('preferred_date', e.target.value)}
+                                                    className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                                />
+                                                {errors.preferred_date && <p className="mt-1 text-sm text-red-600">{errors.preferred_date}</p>}
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-700">Contact Phone (Optional)</label>
+                                                <input
+                                                    type="tel"
+                                                    value={data.contact_phone}
+                                                    onChange={(e) => setData('contact_phone', e.target.value)}
+                                                    className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                                    placeholder="Your phone number"
+                                                />
+                                                {errors.contact_phone && <p className="mt-1 text-sm text-red-600">{errors.contact_phone}</p>}
+                                            </div>
+
+                                            <div className="flex gap-2">
+                                                <button
+                                                    type="submit"
+                                                    disabled={processing}
+                                                    className="flex-1 rounded-lg bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-3 font-semibold text-white shadow-md transition-all hover:from-green-700 hover:to-emerald-700 hover:shadow-lg disabled:opacity-50"
+                                                >
+                                                    {processing ? 'Sending...' : 'Send Enquiry'}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setShowEnquiryForm(false);
+                                                        reset();
+                                                    }}
+                                                    className="rounded-lg border-2 border-gray-300 px-4 py-3 font-semibold text-gray-700 transition-colors hover:bg-gray-50"
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        </form>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

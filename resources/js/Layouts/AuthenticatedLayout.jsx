@@ -44,6 +44,28 @@ export default function AuthenticatedLayout({ header, children }) {
                                         >
                                             My Properties
                                         </NavLink>
+                                        <NavLink
+                                            href={route('agent.enquiries')}
+                                            active={route().current('agent.enquiries')}
+                                        >
+                                            My Enquiries
+                                        </NavLink>
+                                    </>
+                                )}
+                                {user.role === 'applicant' && (
+                                    <>
+                                        <NavLink
+                                            href={route('favourites.index')}
+                                            active={route().current('favourites.index')}
+                                        >
+                                            Favourites
+                                        </NavLink>
+                                        <NavLink
+                                            href={route('enquiries.index')}
+                                            active={route().current('enquiries.index')}
+                                        >
+                                            My Enquiries
+                                        </NavLink>
                                     </>
                                 )}
                             </div>
@@ -163,6 +185,28 @@ export default function AuthenticatedLayout({ header, children }) {
                                     active={route().current('properties.my')}
                                 >
                                     My Properties
+                                </ResponsiveNavLink>
+                                <ResponsiveNavLink
+                                    href={route('agent.enquiries')}
+                                    active={route().current('agent.enquiries')}
+                                >
+                                    My Enquiries
+                                </ResponsiveNavLink>
+                            </>
+                        )}
+                        {user.role === 'applicant' && (
+                            <>
+                                <ResponsiveNavLink
+                                    href={route('favourites.index')}
+                                    active={route().current('favourites.index')}
+                                >
+                                    Favourites
+                                </ResponsiveNavLink>
+                                <ResponsiveNavLink
+                                    href={route('enquiries.index')}
+                                    active={route().current('enquiries.index')}
+                                >
+                                    My Enquiries
                                 </ResponsiveNavLink>
                             </>
                         )}

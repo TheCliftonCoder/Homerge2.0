@@ -1,7 +1,10 @@
 import { useState } from 'react';
+import { router, usePage } from '@inertiajs/react';
 
-export default function PropertyCard({ property }) {
+export default function PropertyCard({ property, isFavourited = false }) {
+    const { auth } = usePage().props;
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
+    const [favourited, setFavourited] = useState(isFavourited);
 
     const images = property.images || [];
     const hasImages = images.length > 0;
@@ -33,6 +36,18 @@ export default function PropertyCard({ property }) {
         setCurrentImageIndex((prev) =>
             prev === 0 ? images.length - 1 : prev - 1,
         );
+    };
+
+    const handleFavouriteToggle = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        router.post(`/properties/${property.id}/favourite`, {}, {
+            preserveScroll: true,
+            onSuccess: () => {
+                setFavourited(!favourited);
+            },
+        });
     };
 
     const currentImage = hasImages
@@ -89,6 +104,28 @@ export default function PropertyCard({ property }) {
 
                         {/* Vignette effect */}
                         <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent" />
+
+                        {/* Favourite Button - Only for authenticated applicants */}
+                        {auth?.user && auth.user.role === 'applicant' && (
+                            <button
+                                onClick={handleFavouriteToggle}
+                                className="absolute right-4 top-4 rounded-full bg-white/90 p-3 shadow-lg backdrop-blur-sm transition-all duration-300 hover:bg-white hover:scale-110"
+                                aria-label={favourited ? "Remove from favourites" : "Add to favourites"}
+                            >
+                                <svg
+                                    className={`h-6 w-6 transition-colors ${favourited ? 'fill-red-500 text-red-500' : 'fill-none text-gray-600'}`}
+                                    stroke="currentColor"
+                                    strokeWidth={2}
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+                                    />
+                                </svg>
+                            </button>
+                        )}
 
                         {/* Navigation Arrows - Only show if more than 1 image */}
                         {images.length > 1 && (
