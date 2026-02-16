@@ -54,8 +54,10 @@ Route::middleware('auth')->group(function () {
         // Agent-only routes
         Route::middleware('role:agent')->group(function () {
             Route::get('/my-enquiries', [\App\Http\Controllers\EnquiryController::class , 'agentEnquiries'])->name('agent.enquiries');
+            Route::get('/applicant-cards', [\App\Http\Controllers\ApplicantCardController::class , 'index'])->name('applicant.cards');
         }
-        );    });
+        );
+    });
 
 // Public property details - MUST come after /properties/create to avoid conflict
 Route::get('/properties/{property}', [\App\Http\Controllers\PropertyController::class , 'show'])->name('properties.show');

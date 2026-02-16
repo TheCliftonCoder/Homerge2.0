@@ -50,6 +50,12 @@ export default function AuthenticatedLayout({ header, children }) {
                                         >
                                             My Enquiries
                                         </NavLink>
+                                        <NavLink
+                                            href={route('applicant.cards')}
+                                            active={route().current('applicant.cards')}
+                                        >
+                                            Applicant Cards
+                                        </NavLink>
                                     </>
                                 )}
                                 {user.role === 'applicant' && (
@@ -191,6 +197,12 @@ export default function AuthenticatedLayout({ header, children }) {
                                     active={route().current('agent.enquiries')}
                                 >
                                     My Enquiries
+                                </ResponsiveNavLink>
+                                <ResponsiveNavLink
+                                    href={route('applicant.cards')}
+                                    active={route().current('applicant.cards')}
+                                >
+                                    Applicant Cards
                                 </ResponsiveNavLink>
                             </>
                         )}
