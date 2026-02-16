@@ -23,5 +23,8 @@ class DatabaseSeeder extends Seeder
 
         // Seed properties with test data
         $this->call(PropertySeeder::class);
+
+        // Seed applicants with favourites and enquiries
+        $this->call(ApplicantSeeder::class);
     }
 }
