@@ -55,6 +55,7 @@ Route::middleware('auth')->group(function () {
         Route::middleware('role:agent')->group(function () {
             Route::get('/my-enquiries', [\App\Http\Controllers\EnquiryController::class , 'agentEnquiries'])->name('agent.enquiries');
             Route::get('/applicant-cards', [\App\Http\Controllers\ApplicantCardController::class , 'index'])->name('applicant.cards');
+            Route::get('/applicant-search', [\App\Http\Controllers\ApplicantSearchController::class , 'index'])->name('agent.applicant-search');
         }
         );
     });

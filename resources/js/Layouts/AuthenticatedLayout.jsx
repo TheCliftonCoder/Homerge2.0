@@ -56,6 +56,12 @@ export default function AuthenticatedLayout({ header, children }) {
                                         >
                                             Applicant Cards
                                         </NavLink>
+                                        <NavLink
+                                            href={route('agent.applicant-search')}
+                                            active={route().current('agent.applicant-search')}
+                                        >
+                                            Applicant Search
+                                        </NavLink>
                                     </>
                                 )}
                                 {user.role === 'applicant' && (
@@ -203,6 +209,12 @@ export default function AuthenticatedLayout({ header, children }) {
                                     active={route().current('applicant.cards')}
                                 >
                                     Applicant Cards
+                                </ResponsiveNavLink>
+                                <ResponsiveNavLink
+                                    href={route('agent.applicant-search')}
+                                    active={route().current('agent.applicant-search')}
+                                >
+                                    Applicant Search
                                 </ResponsiveNavLink>
                             </>
                         )}
