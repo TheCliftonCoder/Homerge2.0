@@ -169,6 +169,9 @@ const inputCls = 'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 te
 export default function ApplicantSearch({ filters: initialFilters, applicants, searched }) {
     const { auth } = usePage().props;
     const [filters, setFilters] = useState(initialFilters);
+    const [prompt, setPrompt] = useState('');
+    const [promptLoading, setPromptLoading] = useState(false);
+    const [promptError, setPromptError] = useState('');
 
     const set = (key, value) => setFilters(prev => ({ ...prev, [key]: value }));
 
@@ -201,6 +204,40 @@ export default function ApplicantSearch({ filters: initialFilters, applicants, s
         router.get(route('agent.applicant-search'), updated, { preserveScroll: true });
     };
 
+    // AI prompt handler
+    const handlePrompt = async () => {
+        if (!prompt.trim()) return;
+        setPromptLoading(true);
+        setPromptError('');
+        try {
+            const res = await fetch(route('agent.applicant-search.parse-prompt'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content },
+                body: JSON.stringify({ prompt }),
+            });
+            const data = await res.json();
+            if (!res.ok) { setPromptError(data.error || 'Something went wrong.'); return; }
+            const merged = {
+                activity_type: data.filters.activity_type ?? filters.activity_type,
+                transaction_type: data.filters.transaction_type ?? '',
+                price_min: data.filters.price_min ?? '',
+                price_max: data.filters.price_max ?? '',
+                bedrooms_min: data.filters.bedrooms_min ?? '',
+                bedrooms_max: data.filters.bedrooms_max ?? '',
+                last_activity: data.filters.last_activity ?? '',
+                property_type: data.filters.property_type ?? '',
+                location: data.filters.location ?? '',
+                activity_level: data.filters.activity_level ?? '',
+            };
+            setFilters(merged);
+            router.get(route('agent.applicant-search'), merged, { preserveScroll: true });
+        } catch {
+            setPromptError('Network error. Please try again.');
+        } finally {
+            setPromptLoading(false);
+        }
+    };
+
     const hasActiveFilters = [
         filters.transaction_type, filters.price_min, filters.price_max,
         filters.bedrooms_min, filters.bedrooms_max, filters.last_activity,
@@ -224,6 +261,38 @@ export default function ApplicantSearch({ filters: initialFilters, applicants, s
             <div className="py-8">
                 <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-6">
 
+                    {/* ── AI Prompt Panel ────────────────────────────────── */}
+                    <div className="rounded-2xl bg-gradient-to-r from-indigo-50 to-violet-50 border border-indigo-100 shadow-lg p-6">
+                        <div className="flex items-center gap-2 mb-3">
+                            <span className="text-lg">✨</span>
+                            <p className="text-sm font-semibold text-indigo-700 uppercase tracking-widest">Search by AI prompt</p>
+                        </div>
+                        <div className="flex gap-3">
+                            <textarea
+                                rows={2}
+                                placeholder='e.g. "Show me buyers who favourited 3-bed houses in Reading last month"'
+                                value={prompt}
+                                onChange={e => setPrompt(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handlePrompt(); } }}
+                                className="flex-1 resize-none rounded-xl border border-indigo-200 bg-white px-4 py-3 text-sm text-gray-900 shadow-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                            />
+                            <button
+                                onClick={handlePrompt}
+                                disabled={promptLoading || !prompt.trim()}
+                                className="shrink-0 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 transition-all duration-150"
+                            >
+                                {promptLoading ? (
+                                    <svg className="h-5 w-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                                    </svg>
+                                ) : 'Ask AI'}
+                            </button>
+                        </div>
+                        {promptError && <p className="mt-2 text-sm text-red-600">{promptError}</p>}
+                        <p className="mt-3 text-xs text-indigo-400">↓ or fill in filters manually below</p>
+                    </div>
+
                     {/* ── Primary Toggle Row ─────────────────────────────── */}
                     <div className="rounded-2xl bg-white shadow-lg p-6">
                         <p className="mb-4 text-xs font-semibold uppercase tracking-widest text-gray-400">Search by activity</p>
@@ -238,8 +307,8 @@ export default function ApplicantSearch({ filters: initialFilters, applicants, s
                                             key={type}
                                             onClick={() => handleToggle('activity_type', type)}
                                             className={`flex-1 rounded-lg px-5 py-2 text-sm font-semibold transition-all duration-200 ${filters.activity_type === type
-                                                    ? 'bg-indigo-600 text-white shadow'
-                                                    : 'text-gray-500 hover:text-gray-700'
+                                                ? 'bg-indigo-600 text-white shadow'
+                                                : 'text-gray-500 hover:text-gray-700'
                                                 }`}
                                         >
                                             {type === 'favourites' ? '♥ Favourites' : '✉ Enquiries'}
@@ -257,8 +326,8 @@ export default function ApplicantSearch({ filters: initialFilters, applicants, s
                                             key={val}
                                             onClick={() => handleToggle('transaction_type', val)}
                                             className={`flex-1 rounded-lg px-4 py-2 text-sm font-semibold transition-all duration-200 ${filters.transaction_type === val
-                                                    ? 'bg-indigo-600 text-white shadow'
-                                                    : 'text-gray-500 hover:text-gray-700'
+                                                ? 'bg-indigo-600 text-white shadow'
+                                                : 'text-gray-500 hover:text-gray-700'
                                                 }`}
                                         >
                                             {label}
@@ -372,8 +441,8 @@ export default function ApplicantSearch({ filters: initialFilters, applicants, s
                                         : <><span className="font-semibold text-gray-900">{applicants.length}</span> applicant{applicants.length !== 1 ? 's' : ''} found</>}
                                 </p>
                                 <span className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${filters.activity_type === 'favourites'
-                                        ? 'bg-indigo-100 text-indigo-700'
-                                        : 'bg-emerald-100 text-emerald-700'
+                                    ? 'bg-indigo-100 text-indigo-700'
+                                    : 'bg-emerald-100 text-emerald-700'
                                     }`}>
                                     {filters.activity_type === 'favourites' ? '♥ Favourites only' : '✉ Enquiries only'}
                                 </span>

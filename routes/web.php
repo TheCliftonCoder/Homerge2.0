@@ -21,6 +21,7 @@ Route::get('/dashboard', function () {
 // Public properties listing (no auth required)
 Route::get('/properties', [\App\Http\Controllers\PropertyController::class , 'index'])->name('properties.index');
 Route::get('/search', [\App\Http\Controllers\PropertyController::class , 'search'])->name('properties.search');
+Route::post('/search/parse-prompt', [\App\Http\Controllers\PromptParserController::class , 'parsePropertyPrompt'])->name('properties.search.parse-prompt');
 
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class , 'edit'])->name('profile.edit');
@@ -56,6 +57,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/my-enquiries', [\App\Http\Controllers\EnquiryController::class , 'agentEnquiries'])->name('agent.enquiries');
             Route::get('/applicant-cards', [\App\Http\Controllers\ApplicantCardController::class , 'index'])->name('applicant.cards');
             Route::get('/applicant-search', [\App\Http\Controllers\ApplicantSearchController::class , 'index'])->name('agent.applicant-search');
+            Route::post('/applicant-search/parse-prompt', [\App\Http\Controllers\PromptParserController::class , 'parseApplicantPrompt'])->name('agent.applicant-search.parse-prompt');
         }
         );
     });

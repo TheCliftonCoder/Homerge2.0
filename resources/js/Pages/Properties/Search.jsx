@@ -6,6 +6,10 @@ import PropertyCard from '@/Components/PropertyCard';
 
 export default function Search({ auth, properties, filters }) {
     const [showAdvanced, setShowAdvanced] = useState(false);
+    const [prompt, setPrompt] = useState('');
+    const [promptLoading, setPromptLoading] = useState(false);
+    const [promptError, setPromptError] = useState('');
+
     const [formData, setFormData] = useState({
         location: filters.location || '',
         min_price: filters.min_price || '',
@@ -65,12 +69,85 @@ export default function Search({ auth, properties, filters }) {
 
     const activeFilterCount = Object.values(formData).filter(v => v !== '').length;
 
+    // AI prompt handler
+    const handlePrompt = async () => {
+        if (!prompt.trim()) return;
+        setPromptLoading(true);
+        setPromptError('');
+        try {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content ?? '';
+            const res = await fetch('/search/parse-prompt', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken },
+                body: JSON.stringify({ prompt }),
+            });
+            const data = await res.json();
+            if (!res.ok) { setPromptError(data.error || 'Something went wrong.'); return; }
+            const f = data.filters;
+            const merged = {
+                ...formData,
+                ...(f.transaction_type !== null && f.transaction_type !== undefined ? { transaction_type: f.transaction_type } : {}),
+                ...(f.property_category !== null && f.property_category !== undefined ? { property_category: f.property_category } : {}),
+                ...(f.property_type !== null && f.property_type !== undefined ? { property_type: f.property_type } : {}),
+                ...(f.location !== null && f.location !== undefined ? { location: f.location } : {}),
+                ...(f.min_price !== null && f.min_price !== undefined ? { min_price: String(f.min_price) } : {}),
+                ...(f.max_price !== null && f.max_price !== undefined ? { max_price: String(f.max_price) } : {}),
+                ...(f.bedrooms !== null && f.bedrooms !== undefined ? { bedrooms: String(f.bedrooms) } : {}),
+                ...(f.bathrooms !== null && f.bathrooms !== undefined ? { bathrooms: String(f.bathrooms) } : {}),
+                ...(f.parking !== null && f.parking !== undefined ? { parking: f.parking } : {}),
+                ...(f.garden !== null && f.garden !== undefined ? { garden: f.garden } : {}),
+                ...(f.furnished !== null && f.furnished !== undefined ? { furnished: f.furnished } : {}),
+                ...(f.pets_allowed !== null && f.pets_allowed !== undefined ? { pets_allowed: f.pets_allowed } : {}),
+            };
+            setFormData(merged);
+            const cleanFilters = Object.fromEntries(Object.entries(merged).filter(([_, v]) => v !== ''));
+            router.get('/search', cleanFilters, { preserveState: true });
+        } catch {
+            setPromptError('Network error. Please try again.');
+        } finally {
+            setPromptLoading(false);
+        }
+    };
+
     return (
         <Layout>
             <Head title="Search Properties" />
 
             <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 py-8">
                 <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+
+                    {/* AI Prompt Panel */}
+                    <div className="mb-6 rounded-2xl bg-gradient-to-r from-indigo-50 to-violet-50 border border-indigo-100 shadow-lg p-6">
+                        <div className="flex items-center gap-2 mb-3">
+                            <span className="text-lg">✨</span>
+                            <p className="text-sm font-semibold text-indigo-700 uppercase tracking-widest">Search by AI prompt</p>
+                        </div>
+                        <div className="flex gap-3">
+                            <textarea
+                                rows={2}
+                                placeholder='e.g. "3-bed house to buy in Reading under £500k with a garden"'
+                                value={prompt}
+                                onChange={e => setPrompt(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handlePrompt(); } }}
+                                className="flex-1 resize-none rounded-xl border border-indigo-200 bg-white px-4 py-3 text-sm text-gray-900 shadow-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                            />
+                            <button
+                                onClick={handlePrompt}
+                                disabled={promptLoading || !prompt.trim()}
+                                className="shrink-0 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 transition-all duration-150"
+                            >
+                                {promptLoading ? (
+                                    <svg className="h-5 w-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                                    </svg>
+                                ) : 'Ask AI'}
+                            </button>
+                        </div>
+                        {promptError && <p className="mt-2 text-sm text-red-600">{promptError}</p>}
+                        <p className="mt-3 text-xs text-indigo-400">↓ or fill in filters manually below</p>
+                    </div>
+
                     {/* Sticky Filter Panel */}
                     <div className="sticky top-0 z-10 mb-8">
                         <form onSubmit={handleSearch} className="rounded-2xl bg-white p-6 shadow-xl">
@@ -388,10 +465,10 @@ export default function Search({ auth, properties, filters }) {
                                                 onClick={() => link.url && router.get(link.url)}
                                                 disabled={!link.url}
                                                 className={`rounded-lg px-4 py-2 font-medium ${link.active
-                                                        ? 'bg-indigo-600 text-white'
-                                                        : link.url
-                                                            ? 'bg-white text-gray-700 hover:bg-gray-50'
-                                                            : 'cursor-not-allowed bg-gray-100 text-gray-400'
+                                                    ? 'bg-indigo-600 text-white'
+                                                    : link.url
+                                                        ? 'bg-white text-gray-700 hover:bg-gray-50'
+                                                        : 'cursor-not-allowed bg-gray-100 text-gray-400'
                                                     }`}
                                                 dangerouslySetInnerHTML={{ __html: link.label }}
                                             />
