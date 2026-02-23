@@ -191,7 +191,7 @@ class ApplicantCardController extends Controller
     {
         $totalActivity = $favouritesAnalytics['count'] + $enquiriesAnalytics['count'];
         
-        // Get most recent activity
+        // Get most recent activity blah
         $lastActivity = collect([
             $favouritesAnalytics['last_favourited'],
             $enquiriesAnalytics['last_enquiry'],
