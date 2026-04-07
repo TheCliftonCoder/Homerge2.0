@@ -39,4 +39,8 @@ return [
         'api_key' => env('GEMINI_API_KEY'),
     ],
 
+    'mapbox' => [
+        'token' => env('MAPBOX_ACCESS_TOKEN'),
+    ],
+
 ];

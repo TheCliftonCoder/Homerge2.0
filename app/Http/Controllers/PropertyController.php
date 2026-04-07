@@ -13,11 +13,16 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
+use App\Services\GeocodingService;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class PropertyController extends Controller
 {
+    public function __construct(private GeocodingService $geocoder)
+    {
+    }
+
     /**
      * Display all properties (public page).
      */
@@ -69,9 +74,47 @@ class PropertyController extends Controller
     {
         $query = GeneralProperty::with(['agent', 'images', 'propertyCategory.transaction']);
 
+        $geocodingError = null;
+        $searchCoords = null;
+
         // Basic Filters
         if ($request->filled('location')) {
-            $query->where('location', 'like', '%' . $request->location . '%');
+            if ($request->filled('radius') && floatval($request->radius) > 0) {
+                $coords = $this->geocoder->geocode($request->location);
+                if (isset($coords['lat']) && isset($coords['lng'])) {
+                    $radiusMiles = (float) $request->radius;
+                    $lat = $coords['lat'];
+                    $lng = $coords['lng'];
+
+                    $searchCoords = $coords;
+
+                    $latRange = $radiusMiles / 69.0;
+                    $lngRange = $radiusMiles / abs(cos(deg2rad($lat)) * 69.0);
+                    
+                    $query->whereBetween('latitude', [$lat - $latRange, $lat + $latRange])
+                          ->whereBetween('longitude', [$lng - $lngRange, $lng + $lngRange]);
+
+                    // Use an equirectangular approximation for SQLite sorting 
+                    // distance squared approx = (dLat)^2 + (dLon * cos(lat))^2
+                    $cosLat = cos(deg2rad($lat));
+                    $cosLat2 = $cosLat * $cosLat;
+
+                    $query->select('general_properties.*');
+                    $query->selectRaw(
+                        '((latitude - ?) * (latitude - ?) + (longitude - ?) * (longitude - ?) * ?) AS distance_approx',
+                        [$lat, $lat, $lng, $lng, $cosLat2]
+                    );
+                } else {
+                    $geocodingError = $coords['error'] ?? 'Location not recognised. Showing fallback keyword results instead.';
+                    $query->where('location', 'like', '%' . $request->location . '%');
+                    $query->select('general_properties.*');
+                }
+            } else {
+                $query->where('location', 'like', '%' . $request->location . '%');
+                $query->select('general_properties.*');
+            }
+        } else {
+            $query->select('general_properties.*');
         }
 
         if ($request->filled('min_price')) {
@@ -167,19 +210,42 @@ class PropertyController extends Controller
             });
         }
 
-        // Order by most recent
-        $query->orderBy('created_at', 'desc');
+        // Order by distance if available, otherwise most recent
+        if ($request->filled('location') && $request->filled('radius') && floatval($request->radius) > 0 && empty($geocodingError)) {
+            $query->orderBy('distance_approx', 'asc');
+        } else {
+            $query->orderBy('created_at', 'desc');
+        }
 
         // Paginate results
         $properties = $query->paginate(12)->withQueryString();
 
+        // Calculate exact distance for display using PHP Haversine formula (SQLite compatible)
+        if ($searchCoords !== null) {
+            $lat = $searchCoords['lat'];
+            $lng = $searchCoords['lng'];
+            $properties->getCollection()->transform(function ($property) use ($lat, $lng) {
+                if (!$property->latitude || !$property->longitude) return $property;
+                
+                $earthRadius = 3959; // miles
+                $dLat = deg2rad($property->latitude - $lat);
+                $dLon = deg2rad($property->longitude - $lng);
+                $a = sin($dLat/2) * sin($dLat/2) + cos(deg2rad($lat)) * cos(deg2rad($property->latitude)) * sin($dLon/2) * sin($dLon/2);
+                $c = 2 * asin(sqrt($a));
+                
+                $property->setAttribute('distance_miles', $earthRadius * $c);
+                return $property;
+            });
+        }
+
         return Inertia::render('Properties/Search', [
             'properties' => $properties,
             'filters' => $request->only([
-                'location', 'min_price', 'max_price', 'property_category', 'transaction_type',
+                'location', 'radius', 'min_price', 'max_price', 'property_category', 'transaction_type',
                 'bedrooms', 'bathrooms', 'property_type', 'parking', 'garden',
                 'min_size', 'max_size', 'tenure', 'furnished', 'pets_allowed', 'available_from'
             ]),
+            'geocodingError' => $geocodingError,
         ]);
     }
 
@@ -194,7 +260,10 @@ class PropertyController extends Controller
             $validated = $request->validate([
                 'name' => 'required|string|max:255',
                 'price' => 'required|numeric|min:0',
-                'location' => 'required|string|max:255',
+                'building_name_number' => 'nullable|string|max:255',
+                'street_address' => 'required|string|max:255',
+                'town_city' => 'required|string|max:255',
+                'postcode' => 'required|string|max:20',
                 'size_sqft' => 'required|integer|min:1',
                 'description' => 'nullable|string',
                 'property_category' => 'required|in:residential,commercial',
@@ -248,7 +317,14 @@ class PropertyController extends Controller
             }
 
             // Create property in transaction
-            DB::transaction(function () use ($validated, $categoryData, $transactionData, $request) {
+            
+            $fullAddress = trim(($validated['building_name_number'] ?? '') . ' ' . $validated['street_address'] . ', ' . $validated['town_city'] . ', ' . $validated['postcode']);
+            $coords = $this->geocoder->geocode($fullAddress);
+            $lat = isset($coords['lat']) ? $coords['lat'] : null;
+            $lng = isset($coords['lng']) ? $coords['lng'] : null;
+            $geocodedAt = ($lat !== null) ? now() : null;
+
+            DB::transaction(function () use ($validated, $categoryData, $transactionData, $request, $lat, $lng, $geocodedAt) {
                 // 1. Create transaction record (Sales or Rental)
                 if ($validated['transaction_type'] === 'sale') {
                     $transaction = SalesProperty::create($transactionData);
@@ -276,12 +352,19 @@ class PropertyController extends Controller
                 $generalProperty = GeneralProperty::create([
                     'agent_id' => Auth::id(),
                     'name' => $validated['name'],
-                    'location' => $validated['location'],
+                    'location' => $validated['town_city'],
+                    'building_name_number' => $validated['building_name_number'] ?? null,
+                    'street_address' => $validated['street_address'],
+                    'town_city' => $validated['town_city'],
+                    'postcode' => $validated['postcode'],
                     'price' => $validated['price'],
                     'size_sqft' => $validated['size_sqft'],
                     'description' => $validated['description'] ?? null,
                     'property_category_type' => $categoryType,
                     'property_category_id' => $category->id,
+                    'latitude' => $lat,
+                    'longitude' => $lng,
+                    'geocoded_at' => $geocodedAt,
                 ]);
 
                 // 4. Handle image uploads
@@ -366,22 +449,43 @@ class PropertyController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'price' => 'required|numeric|min:0',
-            'location' => 'required|string|max:255',
+            'building_name_number' => 'nullable|string|max:255',
+            'street_address' => 'required|string|max:255',
+            'town_city' => 'required|string|max:255',
+            'postcode' => 'required|string|max:20',
             'size_sqft' => 'required|integer|min:1',
             'description' => 'nullable|string',
             'images' => 'nullable|array',
             'images.*' => 'image|mimes:jpeg,png,jpg|max:2048',
         ]);
 
-        DB::transaction(function () use ($property, $validated, $request) {
+        $fullAddress = trim(($validated['building_name_number'] ?? '') . ' ' . $validated['street_address'] . ', ' . $validated['town_city'] . ', ' . $validated['postcode']);
+        $coords = $this->geocoder->geocode($fullAddress);
+        $lat = isset($coords['lat']) ? $coords['lat'] : null;
+        $lng = isset($coords['lng']) ? $coords['lng'] : null;
+        $geocodedAt = ($lat !== null) ? now() : null;
+
+        DB::transaction(function () use ($property, $validated, $request, $lat, $lng, $geocodedAt) {
             // Update general property
-            $property->update([
+            $updateData = [
                 'name' => $validated['name'],
-                'location' => $validated['location'],
+                'location' => $validated['town_city'],
+                'building_name_number' => $validated['building_name_number'] ?? null,
+                'street_address' => $validated['street_address'],
+                'town_city' => $validated['town_city'],
+                'postcode' => $validated['postcode'],
                 'price' => $validated['price'],
                 'size_sqft' => $validated['size_sqft'],
                 'description' => $validated['description'] ?? null,
-            ]);
+            ];
+            
+            if ($lat !== null) {
+                $updateData['latitude'] = $lat;
+                $updateData['longitude'] = $lng;
+                $updateData['geocoded_at'] = $geocodedAt;
+            }
+            
+            $property->update($updateData);
 
             // Handle new image uploads
             if ($request->hasFile('images')) {

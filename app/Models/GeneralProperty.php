@@ -19,11 +19,21 @@ class GeneralProperty extends Model
         'description',
         'property_category_type',
         'property_category_id',
+        'latitude',
+        'longitude',
+        'geocoded_at',
+        'building_name_number',
+        'street_address',
+        'town_city',
+        'postcode',
     ];
 
     protected $casts = [
-        'price' => 'decimal:2',
-        'size_sqft' => 'integer',
+        'price'        => 'decimal:2',
+        'size_sqft'    => 'integer',
+        'latitude'     => 'float',
+        'longitude'    => 'float',
+        'geocoded_at'  => 'datetime',
     ];
 
     /**

@@ -4,7 +4,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import PublicLayout from '@/Layouts/PublicLayout';
 import PropertyCard from '@/Components/PropertyCard';
 
-export default function Search({ auth, properties, filters }) {
+export default function Search({ auth, properties, filters, geocodingError }) {
     const [showAdvanced, setShowAdvanced] = useState(false);
     const [prompt, setPrompt] = useState('');
     const [promptLoading, setPromptLoading] = useState(false);
@@ -12,6 +12,7 @@ export default function Search({ auth, properties, filters }) {
 
     const [formData, setFormData] = useState({
         location: filters.location || '',
+        radius: filters.radius || '',
         min_price: filters.min_price || '',
         max_price: filters.max_price || '',
         property_category: filters.property_category || '',
@@ -46,6 +47,7 @@ export default function Search({ auth, properties, filters }) {
     const handleClear = () => {
         setFormData({
             location: '',
+            radius: '',
             min_price: '',
             max_price: '',
             property_category: '',
@@ -90,6 +92,7 @@ export default function Search({ auth, properties, filters }) {
                 ...(f.property_category !== null && f.property_category !== undefined ? { property_category: f.property_category } : {}),
                 ...(f.property_type !== null && f.property_type !== undefined ? { property_type: f.property_type } : {}),
                 ...(f.location !== null && f.location !== undefined ? { location: f.location } : {}),
+                ...(f.radius !== null && f.radius !== undefined ? { radius: String(f.radius) } : {}),
                 ...(f.min_price !== null && f.min_price !== undefined ? { min_price: String(f.min_price) } : {}),
                 ...(f.max_price !== null && f.max_price !== undefined ? { max_price: String(f.max_price) } : {}),
                 ...(f.bedrooms !== null && f.bedrooms !== undefined ? { bedrooms: String(f.bedrooms) } : {}),
@@ -160,7 +163,22 @@ export default function Search({ auth, properties, filters }) {
                                 )}
                             </div>
 
-                            {/* Basic Filters */}
+                            {/* Search Form */}
+                            {geocodingError && (
+                                <div className="mb-6 rounded-xl border-l-4 border-amber-500 bg-amber-50 p-4 shadow-sm">
+                                    <div className="flex">
+                                        <div className="flex-shrink-0">
+                                            <svg className="h-5 w-5 text-amber-400" viewBox="0 0 20 20" fill="currentColor">
+                                                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                            </svg>
+                                        </div>
+                                        <div className="ml-3">
+                                            <p className="text-sm font-medium text-amber-800">{geocodingError}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
                                 {/* Location */}
                                 <div>
@@ -173,6 +191,28 @@ export default function Search({ auth, properties, filters }) {
                                         placeholder="e.g., London, Manchester"
                                         className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                                     />
+                                </div>
+
+                                {/* Radius */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700">Search Radius</label>
+                                    <select
+                                        name="radius"
+                                        value={formData.radius}
+                                        onChange={handleChange}
+                                        disabled={!formData.location}
+                                        className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 disabled:bg-gray-100 disabled:text-gray-400"
+                                    >
+                                        <option value="">Keyword only</option>
+                                        <option value="1">Within 1 mile</option>
+                                        <option value="3">Within 3 miles</option>
+                                        <option value="5">Within 5 miles</option>
+                                        <option value="10">Within 10 miles</option>
+                                        <option value="15">Within 15 miles</option>
+                                        <option value="20">Within 20 miles</option>
+                                        <option value="30">Within 30 miles</option>
+                                        <option value="40">Within 40 miles</option>
+                                    </select>
                                 </div>
 
                                 {/* Min Price */}

@@ -11,7 +11,10 @@ export default function Create() {
         // General fields
         name: '',
         price: '',
-        location: '',
+        building_name_number: '',
+        street_address: '',
+        town_city: '',
+        postcode: '',
         size_sqft: '',
         description: '',
         property_category: 'residential',
@@ -242,17 +245,59 @@ export default function Create() {
                                         </div>
                                     </div>
 
-                                    <div>
-                                        <InputLabel htmlFor="location" value="Location" />
-                                        <TextInput
-                                            id="location"
-                                            type="text"
-                                            className="mt-1 block w-full"
-                                            value={data.location}
-                                            onChange={(e) => setData('location', e.target.value)}
-                                            required
-                                        />
-                                        <InputError message={errors.location} className="mt-2" />
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <InputLabel htmlFor="building_name_number" value="House Number / Name" />
+                                            <TextInput
+                                                id="building_name_number"
+                                                type="text"
+                                                className="mt-1 block w-full"
+                                                value={data.building_name_number}
+                                                onChange={(e) => setData('building_name_number', e.target.value)}
+                                            />
+                                            <InputError message={errors.building_name_number} className="mt-2" />
+                                        </div>
+
+                                        <div>
+                                            <InputLabel htmlFor="street_address" value="Street Address" />
+                                            <TextInput
+                                                id="street_address"
+                                                type="text"
+                                                className="mt-1 block w-full"
+                                                value={data.street_address}
+                                                onChange={(e) => setData('street_address', e.target.value)}
+                                                required
+                                            />
+                                            <InputError message={errors.street_address} className="mt-2" />
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <InputLabel htmlFor="town_city" value="Town / City" />
+                                            <TextInput
+                                                id="town_city"
+                                                type="text"
+                                                className="mt-1 block w-full"
+                                                value={data.town_city}
+                                                onChange={(e) => setData('town_city', e.target.value)}
+                                                required
+                                            />
+                                            <InputError message={errors.town_city} className="mt-2" />
+                                        </div>
+
+                                        <div>
+                                            <InputLabel htmlFor="postcode" value="Postcode" />
+                                            <TextInput
+                                                id="postcode"
+                                                type="text"
+                                                className="mt-1 block w-full"
+                                                value={data.postcode}
+                                                onChange={(e) => setData('postcode', e.target.value)}
+                                                required
+                                            />
+                                            <InputError message={errors.postcode} className="mt-2" />
+                                        </div>
                                     </div>
 
                                     <div>

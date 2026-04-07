@@ -82,9 +82,16 @@ export default function PropertyCard({ property, isFavourited = false }) {
                                 d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
                             />
                         </svg>
-                        <span className="text-2xl font-bold text-gray-900">
-                            {property.location}
-                        </span>
+                        <div className="flex flex-col">
+                            <span className="text-2xl font-bold text-gray-900">
+                                {property.street_address || property.location}
+                            </span>
+                            {property.distance_miles !== undefined && property.distance_miles !== null && (
+                                <span className="text-sm font-medium text-indigo-600 mt-0.5">
+                                    {Number(property.distance_miles).toFixed(1)} miles away
+                                </span>
+                            )}
+                        </div>
                     </div>
                     <span className="bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-4xl font-extrabold text-transparent">
                         {formatPrice(property.price)}

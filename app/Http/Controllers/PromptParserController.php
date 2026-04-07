@@ -113,6 +113,7 @@ Keys and allowed values:
 - property_category: "residential" or "commercial" or null
 - property_type: one of "detached","semi_detached","terraced","flat","bungalow" or null
 - location: string (UK town/city) or null
+- radius: integer in miles or null (e.g., "within 10 miles of X" -> 10, "near X" -> 5)
 - min_price: integer in GBP or null  (for rentals, interpret monthly rent)
 - max_price: integer in GBP or null
 - bedrooms: integer (exact number) or null
