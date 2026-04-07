@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import GuestLayout from '@/Layouts/GuestLayout';
+import PublicLayout from '@/Layouts/PublicLayout';
 import PropertyCard from '@/Components/PropertyCard';
 
 export default function Search({ auth, properties, filters }) {
@@ -65,7 +65,7 @@ export default function Search({ auth, properties, filters }) {
         router.get('/search');
     };
 
-    const Layout = auth?.user ? AuthenticatedLayout : GuestLayout;
+    const Layout = auth?.user ? AuthenticatedLayout : PublicLayout;
 
     const activeFilterCount = Object.values(formData).filter(v => v !== '').length;
 

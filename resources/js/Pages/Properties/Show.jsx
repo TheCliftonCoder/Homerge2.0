@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Head, router, useForm } from '@inertiajs/react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import GuestLayout from '@/Layouts/GuestLayout';
+import PublicLayout from '@/Layouts/PublicLayout';
 
 export default function Show({ auth, property, hasEnquired = false }) {
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
@@ -66,7 +66,7 @@ export default function Show({ auth, property, hasEnquired = false }) {
         ? `/storage/${images[currentImageIndex].image_path}`
         : null;
 
-    const Layout = auth?.user ? AuthenticatedLayout : GuestLayout;
+    const Layout = auth?.user ? AuthenticatedLayout : PublicLayout;
 
     return (
         <Layout>

@@ -1,14 +1,14 @@
-import GuestLayout from '@/Layouts/GuestLayout';
+import PublicLayout from '@/Layouts/PublicLayout';
 import PropertyCard from '@/Components/PropertyCard';
 import { Head } from '@inertiajs/react';
 
 export default function Index({ properties }) {
     return (
-        <GuestLayout>
+        <PublicLayout>
             <Head title="Property Listings" />
 
             <div className="py-12">
-                <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
+                <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
                     <div className="mb-8">
                         <h1 className="text-3xl font-bold text-gray-900">
                             Available Properties
@@ -52,6 +52,6 @@ export default function Index({ properties }) {
                     )}
                 </div>
             </div>
-        </GuestLayout>
+        </PublicLayout>
     );
 }
