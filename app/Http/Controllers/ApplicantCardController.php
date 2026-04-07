@@ -45,6 +45,7 @@ class ApplicantCardController extends Controller
 
         return Inertia::render('Agent/ApplicantCards', [
             'applicants' => $applicants,
+            'agent_properties' => \App\Models\GeneralProperty::where('agent_id', Auth::id())->get(['id', 'name']),
         ]);
     }
 

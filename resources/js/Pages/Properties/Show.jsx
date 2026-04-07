@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Head, router, useForm } from '@inertiajs/react';
+import { Head, router, useForm, Link } from '@inertiajs/react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import PublicLayout from '@/Layouts/PublicLayout';
 
@@ -232,9 +232,32 @@ export default function Show({ auth, property, hasEnquired = false }) {
                                         <p className="text-sm text-gray-600">{property.agent.email}</p>
                                     </div>
                                 </div>
-                                <button className="mt-4 w-full rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 px-4 py-3 font-semibold text-white shadow-md transition-all hover:from-indigo-700 hover:to-purple-700 hover:shadow-lg">
-                                    Contact Agent
-                                </button>
+                                <div>
+                                    {auth?.user ? (
+                                        auth.user.role === 'applicant' ? (
+                                            <Link
+                                                href={`${route('messages.index')}?user_id=${property.agent_id}&property_id=${property.id}`}
+                                                className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 px-4 py-3 font-semibold text-white shadow-md transition-all hover:from-indigo-700 hover:to-purple-700 hover:shadow-lg"
+                                            >
+                                                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                                                </svg>
+                                                Message Agent
+                                            </Link>
+                                        ) : (
+                                            <div className="mt-4 rounded-lg bg-gray-100 p-3 text-center text-sm font-medium text-gray-500 italic">
+                                                Viewing as Agent/Admin
+                                            </div>
+                                        )
+                                    ) : (
+                                        <Link
+                                            href={route('login')}
+                                            className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 px-4 py-3 font-semibold text-white shadow-md transition-all hover:from-indigo-700 hover:to-purple-700 hover:shadow-lg"
+                                        >
+                                            Login to Message Agent
+                                        </Link>
+                                    )}
+                                </div>
                             </div>
 
                             {/* Enquire to View - Only for authenticated applicants */}

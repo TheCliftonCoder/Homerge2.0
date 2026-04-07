@@ -1,8 +1,37 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import ApplicantCard from '@/Components/ApplicantCard';
-import { Head } from '@inertiajs/react';
+import { Head, useForm } from '@inertiajs/react';
+import { useState } from 'react';
+import Modal from '@/Components/Modal';
 
-export default function ApplicantCards({ applicants }) {
+export default function ApplicantCards({ applicants, agent_properties }) {
+    const [selectedApplicant, setSelectedApplicant] = useState(null);
+    const { data, setData, post, processing, reset, errors } = useForm({
+        recipient_id: '',
+        property_id: '',
+        body: '',
+    });
+
+    const openMessageModal = (applicant) => {
+        setSelectedApplicant(applicant);
+        setData({
+            recipient_id: applicant.id,
+            property_id: agent_properties.length > 0 ? agent_properties[0].id : '',
+            body: '',
+        });
+    };
+
+    const closeMessageModal = () => {
+        setSelectedApplicant(null);
+        reset();
+    };
+
+    const submitMessage = (e) => {
+        e.preventDefault();
+        post(route('messages.store'), {
+            onSuccess: () => closeMessageModal(),
+        });
+    };
     return (
         <AuthenticatedLayout
             header={
@@ -58,6 +87,7 @@ export default function ApplicantCards({ applicants }) {
                                 <ApplicantCard
                                     key={applicant.id}
                                     applicant={applicant}
+                                    onMessage={openMessageModal}
                                 />
                             ))}
                         </div>
@@ -87,6 +117,66 @@ export default function ApplicantCards({ applicants }) {
                     )}
                 </div>
             </div>
+
+            <Modal show={selectedApplicant !== null} onClose={closeMessageModal}>
+                <form onSubmit={submitMessage} className="p-6">
+                    <h2 className="text-lg font-bold text-gray-900 border-b border-gray-100 pb-3 mb-4">
+                        Message {selectedApplicant?.name}
+                    </h2>
+
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-1">
+                                Mention a Property
+                            </label>
+                            <select
+                                value={data.property_id}
+                                onChange={e => setData('property_id', e.target.value)}
+                                className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                required
+                            >
+                                <option value="" disabled>Select one of your properties</option>
+                                {agent_properties.map(p => (
+                                    <option key={p.id} value={p.id}>{p.name}</option>
+                                ))}
+                            </select>
+                            {errors.property_id && <p className="mt-1 text-xs text-red-600">{errors.property_id}</p>}
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-1">
+                                Your Message
+                            </label>
+                            <textarea
+                                value={data.body}
+                                onChange={e => setData('body', e.target.value)}
+                                className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                rows="4"
+                                placeholder={`Hi ${selectedApplicant?.name}, I noticed you were looking at properties in this area...`}
+                                required
+                            ></textarea>
+                            {errors.body && <p className="mt-1 text-xs text-red-600">{errors.body}</p>}
+                        </div>
+                    </div>
+
+                    <div className="mt-6 flex items-center justify-end gap-3 border-t border-gray-100 pt-5">
+                        <button
+                            type="button"
+                            onClick={closeMessageModal}
+                            className="rounded-lg border-2 border-gray-300 px-4 py-2 text-sm font-bold text-gray-700 transition hover:bg-gray-50 focus:outline-none"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={processing || !data.property_id || !data.body.trim()}
+                            className="rounded-lg bg-indigo-600 px-6 py-2 text-sm font-bold text-white shadow-lg transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50"
+                        >
+                            {processing ? 'Sending...' : 'Send Message Request'}
+                        </button>
+                    </div>
+                </form>
+            </Modal>
         </AuthenticatedLayout>
     );
 }

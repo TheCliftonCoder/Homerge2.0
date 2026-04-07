@@ -60,6 +60,12 @@ Route::middleware('auth')->group(function () {
             Route::post('/applicant-search/parse-prompt', [\App\Http\Controllers\PromptParserController::class , 'parseApplicantPrompt'])->name('agent.applicant-search.parse-prompt');
         }
         );
+
+        // Messaging routes
+        Route::get('/messages', [\App\Http\Controllers\MessageController::class , 'index'])->name('messages.index');
+        Route::get('/messages/{conversation}', [\App\Http\Controllers\MessageController::class , 'show'])->name('messages.show');
+        Route::post('/messages', [\App\Http\Controllers\MessageController::class , 'store'])->name('messages.store');
+        Route::post('/messages/{conversation}/accept', [\App\Http\Controllers\MessageController::class , 'accept'])->name('messages.accept');
     });
 
 // Public property details - MUST come after /properties/create to avoid conflict

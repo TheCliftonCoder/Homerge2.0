@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Head, router, usePage } from '@inertiajs/react';
+import { Head, router, usePage, useForm } from '@inertiajs/react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import Modal from '@/Components/Modal';
 
 const PROPERTY_TYPES = [
     { value: '', label: 'Any' },
@@ -52,7 +53,7 @@ function formatPropertyType(type) {
 }
 
 // ─── Compact search result card ─────────────────────────────────────────────
-function ApplicantResultCard({ applicant }) {
+function ApplicantResultCard({ applicant, onMessage }) {
     const { analytics, activity_type } = applicant;
     const isFav = activity_type === 'favourites';
 
@@ -69,8 +70,19 @@ function ApplicantResultCard({ applicant }) {
                         <h3 className="truncate text-lg font-bold">{applicant.name}</h3>
                         <p className="truncate text-sm opacity-80">{applicant.email}</p>
                     </div>
-                    <div className="shrink-0 rounded-full bg-white/20 px-3 py-1 text-sm font-semibold backdrop-blur-sm">
-                        {analytics.count} {isFav ? '♥' : '✉'}
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => onMessage(applicant)}
+                            className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20 text-white transition hover:bg-white/40 focus:outline-none"
+                            title="Message Applicant"
+                        >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                            </svg>
+                        </button>
+                        <div className="shrink-0 rounded-full bg-white/20 px-3 py-1 text-sm font-semibold backdrop-blur-sm">
+                            {analytics.count} {isFav ? '♥' : '✉'}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -166,12 +178,41 @@ function Field({ label, children }) {
 const inputCls = 'w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100';
 
 // ─── Main page ───────────────────────────────────────────────────────────────
-export default function ApplicantSearch({ filters: initialFilters, applicants, searched }) {
+export default function ApplicantSearch({ filters: initialFilters, applicants, searched, agent_properties }) {
     const { auth } = usePage().props;
     const [filters, setFilters] = useState(initialFilters);
     const [prompt, setPrompt] = useState('');
     const [promptLoading, setPromptLoading] = useState(false);
     const [promptError, setPromptError] = useState('');
+
+    // Messaging State
+    const [selectedApplicant, setSelectedApplicant] = useState(null);
+    const { data, setData, post, processing, reset, errors } = useForm({
+        recipient_id: '',
+        property_id: '',
+        body: '',
+    });
+
+    const openMessageModal = (applicant) => {
+        setSelectedApplicant(applicant);
+        setData({
+            recipient_id: applicant.id,
+            property_id: agent_properties.length > 0 ? agent_properties[0].id : '',
+            body: '',
+        });
+    };
+
+    const closeMessageModal = () => {
+        setSelectedApplicant(null);
+        reset();
+    };
+
+    const submitMessage = (e) => {
+        e.preventDefault();
+        post(route('messages.store'), {
+            onSuccess: () => closeMessageModal(),
+        });
+    };
 
     const set = (key, value) => setFilters(prev => ({ ...prev, [key]: value }));
 
@@ -452,7 +493,11 @@ export default function ApplicantSearch({ filters: initialFilters, applicants, s
                             {applicants.length > 0 ? (
                                 <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
                                     {applicants.map(applicant => (
-                                        <ApplicantResultCard key={applicant.id} applicant={applicant} />
+                                        <ApplicantResultCard
+                                            key={applicant.id}
+                                            applicant={applicant}
+                                            onMessage={openMessageModal}
+                                        />
                                     ))}
                                 </div>
                             ) : (
@@ -483,6 +528,66 @@ export default function ApplicantSearch({ filters: initialFilters, applicants, s
 
                 </div>
             </div>
+
+            <Modal show={selectedApplicant !== null} onClose={closeMessageModal}>
+                <form onSubmit={submitMessage} className="p-6">
+                    <h2 className="text-lg font-bold text-gray-900 border-b border-gray-100 pb-3 mb-4">
+                        Message {selectedApplicant?.name}
+                    </h2>
+
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-1">
+                                Mention a Property
+                            </label>
+                            <select
+                                value={data.property_id}
+                                onChange={e => setData('property_id', e.target.value)}
+                                className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                required
+                            >
+                                <option value="" disabled>Select one of your properties</option>
+                                {agent_properties.map(p => (
+                                    <option key={p.id} value={p.id}>{p.name}</option>
+                                ))}
+                            </select>
+                            {errors.property_id && <p className="mt-1 text-xs text-red-600">{errors.property_id}</p>}
+                        </div>
+
+                        <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-1">
+                                Your Message
+                            </label>
+                            <textarea
+                                value={data.body}
+                                onChange={e => setData('body', e.target.value)}
+                                className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                rows="4"
+                                placeholder={`Hi ${selectedApplicant?.name}, I noticed you were looking at properties in this area...`}
+                                required
+                            ></textarea>
+                            {errors.body && <p className="mt-1 text-xs text-red-600">{errors.body}</p>}
+                        </div>
+                    </div>
+
+                    <div className="mt-6 flex items-center justify-end gap-3 border-t border-gray-100 pt-5">
+                        <button
+                            type="button"
+                            onClick={closeMessageModal}
+                            className="rounded-lg border-2 border-gray-300 px-4 py-2 text-sm font-bold text-gray-700 transition hover:bg-gray-50 focus:outline-none"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={processing || !data.property_id || !data.body.trim()}
+                            className="rounded-lg bg-indigo-600 px-6 py-2 text-sm font-bold text-white shadow-lg transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50"
+                        >
+                            {processing ? 'Sending...' : 'Send Message Request'}
+                        </button>
+                    </div>
+                </form>
+            </Modal>
         </AuthenticatedLayout>
     );
 }

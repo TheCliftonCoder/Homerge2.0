@@ -49,6 +49,7 @@ class ApplicantSearchController extends Controller
             'filters'    => $filters,
             'applicants' => $applicants,
             'searched'   => $hasFilters,
+            'agent_properties' => \App\Models\GeneralProperty::where('agent_id', \Illuminate\Support\Facades\Auth::id())->get(['id', 'name']),
         ]);
     }
 

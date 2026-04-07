@@ -1,6 +1,6 @@
 import { Link } from '@inertiajs/react';
 
-export default function ApplicantCard({ applicant }) {
+export default function ApplicantCard({ applicant, onMessage }) {
     const { favourites_analytics, enquiries_analytics, overall_activity } = applicant;
 
     const formatPrice = (price) => {
@@ -53,8 +53,19 @@ export default function ApplicantCard({ applicant }) {
                         <h3 className="text-xl font-bold">{applicant.name}</h3>
                         <p className="text-sm text-indigo-100">{applicant.email}</p>
                     </div>
-                    <div className="rounded-full bg-white/20 px-3 py-1 backdrop-blur-sm">
-                        <span className="text-sm font-semibold">{overall_activity.total_count} activities</span>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => onMessage(applicant)}
+                            className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20 text-white transition hover:bg-white/40 focus:outline-none"
+                            title="Message Applicant"
+                        >
+                            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                            </svg>
+                        </button>
+                        <div className="rounded-full bg-white/20 px-3 py-1 backdrop-blur-sm">
+                            <span className="text-sm font-semibold">{overall_activity.total_count} activities</span>
+                        </div>
                     </div>
                 </div>
             </div>

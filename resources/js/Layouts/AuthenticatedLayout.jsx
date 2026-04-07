@@ -62,6 +62,12 @@ export default function AuthenticatedLayout({ header, children }) {
                                         >
                                             Applicant Search
                                         </NavLink>
+                                        <NavLink
+                                            href={route('messages.index')}
+                                            active={route().current('messages.*')}
+                                        >
+                                            Messages
+                                        </NavLink>
                                     </>
                                 )}
                                 {user.role === 'applicant' && (
@@ -77,6 +83,12 @@ export default function AuthenticatedLayout({ header, children }) {
                                             active={route().current('enquiries.index')}
                                         >
                                             My Enquiries
+                                        </NavLink>
+                                        <NavLink
+                                            href={route('messages.index')}
+                                            active={route().current('messages.*')}
+                                        >
+                                            Messages
                                         </NavLink>
                                     </>
                                 )}
@@ -216,6 +228,12 @@ export default function AuthenticatedLayout({ header, children }) {
                                 >
                                     Applicant Search
                                 </ResponsiveNavLink>
+                                <ResponsiveNavLink
+                                    href={route('messages.index')}
+                                    active={route().current('messages.*')}
+                                >
+                                    Messages
+                                </ResponsiveNavLink>
                             </>
                         )}
                         {user.role === 'applicant' && (
@@ -231,6 +249,12 @@ export default function AuthenticatedLayout({ header, children }) {
                                     active={route().current('enquiries.index')}
                                 >
                                     My Enquiries
+                                </ResponsiveNavLink>
+                                <ResponsiveNavLink
+                                    href={route('messages.index')}
+                                    active={route().current('messages.*')}
+                                >
+                                    Messages
                                 </ResponsiveNavLink>
                             </>
                         )}
