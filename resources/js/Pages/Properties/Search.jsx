@@ -636,10 +636,13 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                             <div className="flex items-end gap-4">
                                                 <div className="flex-1">
                                                     <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">
-                                                        {pinFormMode === 'commute' ? 'Commute Time (mins)' : 'Search Radius (miles)'}
+                                                        {pinFormMode === 'commute' ? 'Commute Time (max 60 mins)' : 'Search Radius (miles)'}
                                                     </label>
                                                     <input
                                                         type="number"
+                                                        min={pinFormMode === 'commute' ? 1 : 0.1}
+                                                        max={pinFormMode === 'commute' ? 60 : 50}
+                                                        step={pinFormMode === 'commute' ? 1 : 0.1}
                                                         value={pinValue}
                                                         onChange={e => setPinValue(e.target.value)}
                                                         className="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 text-sm px-4"
@@ -663,13 +666,20 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                                     type="button"
                                                     onClick={() => {
                                                         if (pinQuery.trim()) {
+                                                            let val = parseFloat(pinValue);
+                                                            if (isNaN(val)) {
+                                                                val = pinFormMode === 'commute' ? 20 : 1.0;
+                                                            }
+                                                            if (pinFormMode === 'commute' && val > 60) {
+                                                                val = 60;
+                                                            }
                                                             setFormData(prev => ({
                                                                 ...prev,
                                                                 proximity_pins: [...prev.proximity_pins, { 
                                                                     type: pinFormMode, 
                                                                     query: pinQuery.trim(), 
                                                                     label: pinLabel.trim() || null,
-                                                                    value: parseFloat(pinValue) || (pinFormMode === 'commute' ? 20 : 1.0),
+                                                                    value: val,
                                                                     mode: pinFormMode === 'commute' ? pinMode : null 
                                                                 }]
                                                             }));

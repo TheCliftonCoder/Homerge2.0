@@ -4,8 +4,9 @@ This system uses a hybrid approach for location-based filtering, combining pre-c
 
 ## Dependencies
 
-1. **Mapbox API Token**: Ensure `MAPBOX_TOKEN` is set in your `.env` file.
-2. **Gemini API Token**: Ensure `GEMINI_API_KEY` is set for AI prompt parsing.
+1. **Mapbox API Token**: Ensure `MAPBOX_ACCESS_TOKEN` is set in your `.env` file.
+2. **Groq API Token**: Ensure `GROQ_API_KEY` is set for AI prompt parsing.
+
 
 ## Infrastructure Requirements
 

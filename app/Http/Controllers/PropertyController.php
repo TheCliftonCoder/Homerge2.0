@@ -257,6 +257,10 @@ class PropertyController extends Controller
                     if ($pinType === 'commute') {
                         $mode = $pin['mode'] ?? 'driving';
                         $mins = (int) ($pin['value'] ?? 20);
+                        if ($mins > 60) {
+                            $geocodingErrors[] = "Commute time for '{$pin['query']}' cannot exceed 60 minutes. It has been automatically capped at 60 minutes.";
+                            $mins = 60;
+                        }
                         
                         $isoPolygons = $this->isochrone->getPolygons($coords['lat'], $coords['lng'], $mode, $mins);
                         

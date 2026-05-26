@@ -8,47 +8,46 @@ use Illuminate\Support\Facades\Http;
 
 class PromptParserController extends Controller
 {
-    private function callGemini(string $prompt, string $systemInstruction): array
+    private function callGroq(string $prompt, string $systemInstruction): array
     {
-        $apiKey = config('services.gemini.api_key');
+        $apiKey = config('services.groq.api_key');
+        $model = config('services.groq.model', 'llama-3.3-70b-versatile');
 
         if (!$apiKey) {
-            return ['error' => 'Gemini API key not configured. Please add GEMINI_API_KEY to your .env file.'];
+            return ['error' => 'Groq API key not configured. Please add GROQ_API_KEY to your .env file.'];
         }
 
         $body = [
-            'contents' => [
+            'model' => $model,
+            'messages' => [
+                [
+                    'role' => 'system',
+                    'content' => $systemInstruction,
+                ],
                 [
                     'role' => 'user',
-                    'parts' => [['text' => $prompt]],
+                    'content' => $prompt,
                 ],
             ],
-            'systemInstruction' => [
-                'parts' => [['text' => $systemInstruction]],
-            ],
-            'generationConfig' => [
-                'responseMimeType' => 'application/json',
-                'temperature' => 0,
-            ],
+            'response_format' => ['type' => 'json_object'],
+            'temperature' => 0,
         ];
 
         $response = Http::timeout(15)
             ->withoutVerifying() // bypasses Windows SSL cert issues on php -S dev server
-            ->post(
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={$apiKey}",
-            $body
-        );
+            ->withToken($apiKey)
+            ->post('https://api.groq.com/openai/v1/chat/completions', $body);
 
         if ($response->failed()) {
             $status = $response->status();
             $detail = $response->json('error.message') ?? $response->body();
-            return ['error' => "Gemini API error ({$status}): {$detail}"];
+            return ['error' => "Groq API error ({$status}): {$detail}"];
         }
 
-        $text = $response->json('candidates.0.content.parts.0.text');
+        $text = $response->json('choices.0.message.content');
 
         if (!$text) {
-            return ['error' => 'Unexpected response from Gemini. Please try again.'];
+            return ['error' => 'Unexpected response from Groq. Please try again.'];
         }
 
         $parsed = json_decode($text, true);
@@ -87,7 +86,7 @@ Keys and allowed values:
 Return ONLY the JSON object, no markdown, no explanation.
 PROMPT;
 
-        $filters = $this->callGemini($request->input('prompt'), $systemInstruction);
+        $filters = $this->callGroq($request->input('prompt'), $systemInstruction);
 
         if (isset($filters['error'])) {
             return response()->json(['error' => $filters['error']], 422);
@@ -137,7 +136,7 @@ Keys and allowed values:
 Return ONLY the JSON object, no markdown, no explanation.
 PROMPT;
 
-        $filters = $this->callGemini($request->input('prompt'), $systemInstruction);
+        $filters = $this->callGroq($request->input('prompt'), $systemInstruction);
 
         if (isset($filters['error'])) {
             return response()->json(['error' => $filters['error']], 422);
