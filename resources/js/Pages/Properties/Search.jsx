@@ -4,7 +4,13 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import PublicLayout from '@/Layouts/PublicLayout';
 import PropertyCard from '@/Components/PropertyCard';
 
-export default function Search({ auth, properties, filters, geocodingError }) {
+export default function Search({ auth, properties, filters, geocodingError, geocodingErrors = [], resolvedPins = [], isochroneResolved = null }) {
+    const [isFiltersCollapsed, setIsFiltersCollapsed] = useState(properties.total > 0);
+    const [pinFormMode, setPinFormMode] = useState('commute'); // 'commute' or 'radius'
+    const [pinQuery, setPinQuery] = useState('');
+    const [pinLabel, setPinLabel] = useState('');
+    const [pinValue, setPinValue] = useState('20');
+    const [pinMode, setPinMode] = useState('driving');
     const [showAdvanced, setShowAdvanced] = useState(false);
     const [prompt, setPrompt] = useState('');
     const [promptLoading, setPromptLoading] = useState(false);
@@ -28,6 +34,8 @@ export default function Search({ auth, properties, filters, geocodingError }) {
         furnished: filters.furnished || '',
         pets_allowed: filters.pets_allowed || '',
         available_from: filters.available_from || '',
+        poi_proximity: filters.poi_proximity || [],
+        proximity_pins: filters.proximity_pins || [],
     });
 
     const handleChange = (e) => {
@@ -39,9 +47,18 @@ export default function Search({ auth, properties, filters, geocodingError }) {
         e.preventDefault();
         // Remove empty values
         const cleanFilters = Object.fromEntries(
-            Object.entries(formData).filter(([_, value]) => value !== '')
+            Object.entries(formData).filter(([_, value]) => {
+                if (Array.isArray(value)) return value.length > 0;
+                if (value && typeof value === 'object') {
+                    return Object.values(value).some(v => v !== '' && v !== null && v !== undefined);
+                }
+                return value !== '' && value !== null;
+            })
         );
-        router.get('/search', cleanFilters, { preserveState: true });
+        router.get('/search', cleanFilters, { 
+            preserveState: true, 
+            onSuccess: () => setIsFiltersCollapsed(true) 
+        });
     };
 
     const handleClear = () => {
@@ -63,6 +80,8 @@ export default function Search({ auth, properties, filters, geocodingError }) {
             furnished: '',
             pets_allowed: '',
             available_from: '',
+            poi_proximity: [],
+            proximity_pins: [],
         });
         router.get('/search');
     };
@@ -101,10 +120,20 @@ export default function Search({ auth, properties, filters, geocodingError }) {
                 ...(f.garden !== null && f.garden !== undefined ? { garden: f.garden } : {}),
                 ...(f.furnished !== null && f.furnished !== undefined ? { furnished: f.furnished } : {}),
                 ...(f.pets_allowed !== null && f.pets_allowed !== undefined ? { pets_allowed: f.pets_allowed } : {}),
+                ...(f.poi_proximity ? { poi_proximity: f.poi_proximity } : {}),
+                ...(f.proximity_pins ? { proximity_pins: f.proximity_pins } : {}),
             };
             setFormData(merged);
-            const cleanFilters = Object.fromEntries(Object.entries(merged).filter(([_, v]) => v !== ''));
-            router.get('/search', cleanFilters, { preserveState: true });
+            const cleanFilters = Object.fromEntries(
+                Object.entries(merged).filter(([_, value]) => {
+                    if (Array.isArray(value)) return value.length > 0;
+                    if (value && typeof value === 'object') {
+                        return Object.values(value).some(v => v !== '' && v !== null && v !== undefined);
+                    }
+                    return value !== '' && value !== null;
+                })
+            );
+            router.get('/search', cleanFilters, { preserveState: true, onSuccess: () => setIsFiltersCollapsed(true) });
         } catch {
             setPromptError('Network error. Please try again.');
         } finally {
@@ -151,19 +180,99 @@ export default function Search({ auth, properties, filters, geocodingError }) {
                         <p className="mt-3 text-xs text-indigo-400">↓ or fill in filters manually below</p>
                     </div>
 
-                    {/* Sticky Filter Panel */}
-                    <div className="sticky top-0 z-10 mb-8">
-                        <form onSubmit={handleSearch} className="rounded-2xl bg-white p-6 shadow-xl">
-                            <div className="mb-6 flex items-center justify-between">
-                                <h1 className="text-3xl font-bold text-gray-900">Search Properties</h1>
-                                {activeFilterCount > 0 && (
-                                    <span className="rounded-full bg-indigo-100 px-4 py-2 text-sm font-semibold text-indigo-700">
-                                        {activeFilterCount} {activeFilterCount === 1 ? 'filter' : 'filters'} active
-                                    </span>
-                                )}
+                    {/* Sticky Filter Panel (only sticky when collapsed to avoid scroll overflow issues) */}
+                    <div className={`${isFiltersCollapsed ? 'sticky top-0 z-20' : 'relative'} mb-8`}>
+                        {isFiltersCollapsed ? (
+                            <div className="rounded-2xl bg-white/95 p-4 shadow-lg backdrop-blur-md border border-gray-100 flex items-center justify-between animate-in fade-in slide-in-from-top-4 duration-300">
+                                <div className="flex items-center gap-4 overflow-hidden">
+                                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 text-white shadow-lg">
+                                        <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                        </svg>
+                                    </div>
+                                    <div className="flex flex-col min-w-0">
+                                        <p className="text-lg font-bold text-gray-900 truncate flex items-center gap-2">
+                                            {formData.location || (isochroneResolved ? `Near ${isochroneResolved.resolved_name}` : 'All Locations')}
+                                            {formData.radius && <span className="text-indigo-600 text-sm">+{formData.radius}mi</span>}
+                                        </p>
+                                        <div className="flex gap-1.5 flex-wrap">
+                                            {[
+                                                formData.property_category,
+                                                formData.transaction_type,
+                                                formData.bedrooms && (
+                                                    <span key="beds" className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase">{formData.bedrooms}+ Beds</span>
+                                                ),
+                                                (formData.min_price || formData.max_price) && (
+                                                    <span key="price" className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase">£{formData.min_price || 0} - {formData.max_price ? '£' + formData.max_price : 'Any'}</span>
+                                                ),
+                                                formData.poi_proximity?.map((poi, idx) => (
+                                                    <span key={`poi-${idx}`} className="bg-amber-50 text-amber-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase">Near {poi.poi_type.replace('_', ' ')} ({poi.max_miles}mi)</span>
+                                                )),
+                                                resolvedPins?.map((pin, idx) => (
+                                                    <span key={`pin-${idx}`} className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase">
+                                                        📍 {pin.label || pin.query} 
+                                                        ({pin.type === 'commute' ? `${pin.minutes}m ${pin.mode}` : `${pin.max_miles}mi`})
+                                                    </span>
+                                                ))
+                                            ].flat().filter(Boolean)}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <button
+                                        onClick={() => setIsFiltersCollapsed(false)}
+                                        className="rounded-xl border-2 border-indigo-200 bg-white px-5 py-2.5 text-sm font-bold text-indigo-700 transition-all hover:bg-indigo-50 hover:border-indigo-300 active:scale-95 shadow-sm"
+                                    >
+                                        Modify Search
+                                    </button>
+                                    <button
+                                        onClick={handleClear}
+                                        className="p-3 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                                        title="Clear All"
+                                    >
+                                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                        </svg>
+                                    </button>
+                                </div>
                             </div>
+                        ) : (
+                            <form onSubmit={handleSearch} className="rounded-2xl bg-white p-6 shadow-xl relative animate-in zoom-in-95 duration-300">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsFiltersCollapsed(true)}
+                                    className="absolute right-6 top-6 rounded-full p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-all z-10"
+                                >
+                                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                    </svg>
+                                </button>
+                                <div className="mb-6 flex items-center justify-between pr-10">
+                                    <h1 className="text-3xl font-bold text-gray-900">Search Properties</h1>
+                                    {activeFilterCount > 0 && (
+                                        <span className="rounded-full bg-indigo-100 px-4 py-2 text-sm font-semibold text-indigo-700">
+                                            {activeFilterCount} {activeFilterCount === 1 ? 'filter' : 'filters'} active
+                                        </span>
+                                    )}
+                                </div>
 
                             {/* Search Form */}
+                            {geocodingErrors && geocodingErrors.length > 0 && (
+                                <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-100 flex flex-col gap-2">
+                                    <div className="flex items-center gap-2 text-red-700 font-bold">
+                                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                        </svg>
+                                        Landmark Search Issues:
+                                    </div>
+                                    <ul className="list-disc list-inside text-sm text-red-600 ml-1">
+                                        {geocodingErrors.map((err, idx) => (
+                                            <li key={idx}>{err}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+
                             {geocodingError && (
                                 <div className="mb-6 rounded-xl border-l-4 border-amber-500 bg-amber-50 p-4 shadow-sm">
                                     <div className="flex">
@@ -461,6 +570,278 @@ export default function Search({ auth, properties, filters, geocodingError }) {
                                 </div>
                             )}
 
+                            {/* Proximity & Travel Time Section */}
+                            <div className="mt-8 border-t border-gray-200 pt-8">
+                                <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
+                                    <svg className="h-5 w-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    </svg>
+                                    Proximity & Travel Time
+                                </h3>
+
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                    {/* Left Column: User Added Pins */}
+                                    <div className="space-y-4 bg-gray-50/50 p-6 rounded-2xl border border-gray-200/50 flex flex-col justify-between">
+                                        <div>
+                                            <h4 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
+                                                <span>📌</span> Add Custom Pin
+                                            </h4>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div className="md:col-span-2">
+                                                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Landmark or Address</label>
+                                                    <input
+                                                        type="text"
+                                                        value={pinQuery}
+                                                        onChange={e => setPinQuery(e.target.value)}
+                                                        placeholder="e.g. Waterloo Station, My Office"
+                                                        className="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 text-sm px-4"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Display Name (Optional)</label>
+                                                    <input
+                                                        type="text"
+                                                        value={pinLabel}
+                                                        onChange={e => setPinLabel(e.target.value)}
+                                                        placeholder="e.g. Work, Home"
+                                                        className="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 text-sm px-4"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Constraint Type</label>
+                                                    <div className="flex p-1 bg-white border border-gray-200 rounded-xl h-[42px]">
+                                                        <button 
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setPinFormMode('commute');
+                                                                setPinValue('20');
+                                                            }}
+                                                            className={`flex-1 rounded-lg text-xs font-bold transition-all ${pinFormMode === 'commute' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-700'}`}
+                                                        >Commute</button>
+                                                        <button 
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setPinFormMode('radius');
+                                                                setPinValue('1');
+                                                            }}
+                                                            className={`flex-1 rounded-lg text-xs font-bold transition-all ${pinFormMode === 'radius' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-700'}`}
+                                                        >Distance</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="border-t border-gray-200 pt-4 mt-2">
+                                            <div className="flex items-end gap-4">
+                                                <div className="flex-1">
+                                                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">
+                                                        {pinFormMode === 'commute' ? 'Commute Time (mins)' : 'Search Radius (miles)'}
+                                                    </label>
+                                                    <input
+                                                        type="number"
+                                                        value={pinValue}
+                                                        onChange={e => setPinValue(e.target.value)}
+                                                        className="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 text-sm px-4"
+                                                    />
+                                                </div>
+                                                {pinFormMode === 'commute' && (
+                                                    <div className="flex-1">
+                                                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Transport Mode</label>
+                                                        <select 
+                                                            value={pinMode} 
+                                                            onChange={e => setPinMode(e.target.value)}
+                                                            className="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 text-sm px-4"
+                                                        >
+                                                            <option value="driving">Driving 🚗</option>
+                                                            <option value="walking">Walking 🚶</option>
+                                                            <option value="cycling">Cycling 🚲</option>
+                                                        </select>
+                                                    </div>
+                                                )}
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => {
+                                                        if (pinQuery.trim()) {
+                                                            setFormData(prev => ({
+                                                                ...prev,
+                                                                proximity_pins: [...prev.proximity_pins, { 
+                                                                    type: pinFormMode, 
+                                                                    query: pinQuery.trim(), 
+                                                                    label: pinLabel.trim() || null,
+                                                                    value: parseFloat(pinValue) || (pinFormMode === 'commute' ? 20 : 1.0),
+                                                                    mode: pinFormMode === 'commute' ? pinMode : null 
+                                                                }]
+                                                            }));
+                                                            setPinQuery('');
+                                                            setPinLabel('');
+                                                            setPinValue(pinFormMode === 'commute' ? '20' : '1');
+                                                        }
+                                                    }}
+                                                    className="rounded-xl bg-gray-900 px-6 h-[42px] text-white text-sm font-bold shadow-lg hover:shadow-indigo-200/50 hover:bg-black transition-all active:scale-95 shrink-0"
+                                                >
+                                                    Add Pin
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Right Column: Suggested Pins */}
+                                    <div className="space-y-4 bg-gray-50/50 p-6 rounded-2xl border border-gray-200/50">
+                                        <h4 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
+                                            <span>💡</span> Suggested Pins
+                                        </h4>
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                            {[
+                                                { id: 'train_station', label: 'Train Station', icon: '🚂' },
+                                                { id: 'school', label: 'School', icon: '🎓' },
+                                                { id: 'hospital', label: 'Hospital', icon: '🏥' },
+                                                { id: 'supermarket', label: 'Supermarket', icon: '🛒' },
+                                                { id: 'gym', label: 'Gym', icon: '💪' },
+                                                { id: 'park', label: 'Park', icon: '🌳' },
+                                            ].map(poi => {
+                                                const isActive = formData.poi_proximity.some(p => p.poi_type === poi.id);
+                                                return (
+                                                    <button
+                                                        key={poi.id}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            const exists = formData.poi_proximity.find(p => p.poi_type === poi.id);
+                                                            if (exists) {
+                                                                setFormData(prev => ({
+                                                                    ...prev,
+                                                                    poi_proximity: prev.poi_proximity.filter(p => p.poi_type !== poi.id)
+                                                                }));
+                                                            } else {
+                                                                setFormData(prev => ({
+                                                                    ...prev,
+                                                                    poi_proximity: [...prev.poi_proximity, { poi_type: poi.id, max_miles: 1.0 }]
+                                                                }));
+                                                            }
+                                                        }}
+                                                        className={`relative flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all duration-200 gap-2 ${
+                                                            isActive 
+                                                                ? 'border-indigo-600 bg-indigo-50 text-indigo-700 shadow-sm font-bold' 
+                                                                : 'border-gray-200 bg-white text-gray-600 hover:border-indigo-300 hover:bg-indigo-50/10'
+                                                        }`}
+                                                    >
+                                                        <span className="text-2xl">{poi.icon}</span>
+                                                        <span className="text-xs text-center">{poi.label}</span>
+                                                        {isActive && (
+                                                            <span className="absolute top-2 right-2 text-indigo-600">
+                                                                <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+                                                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                                                </svg>
+                                                            </span>
+                                                        )}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Bottom: Selected Pins */}
+                                {((formData.poi_proximity && formData.poi_proximity.length > 0) || (formData.proximity_pins && formData.proximity_pins.length > 0)) && (
+                                    <div className="mt-6 pt-6 border-t border-gray-200 animate-in fade-in duration-300">
+                                        <h4 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
+                                            <span>📍</span> Selected Pins
+                                        </h4>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {/* Suggested POIs */}
+                                            {formData.poi_proximity.map((poi, idx) => {
+                                                const config = [
+                                                    { id: 'train_station', label: 'Train Station', icon: '🚂' },
+                                                    { id: 'school', label: 'School', icon: '🎓' },
+                                                    { id: 'hospital', label: 'Hospital', icon: '🏥' },
+                                                    { id: 'supermarket', label: 'Supermarket', icon: '🛒' },
+                                                    { id: 'gym', label: 'Gym', icon: '💪' },
+                                                    { id: 'park', label: 'Park', icon: '🌳' },
+                                                ].find(c => c.id === poi.poi_type) || { label: poi.poi_type, icon: '📍' };
+
+                                                return (
+                                                    <div key={`poi-${idx}`} className="flex items-center gap-4 bg-white p-4 rounded-2xl border-2 border-indigo-50 shadow-sm hover:border-indigo-150 transition-all">
+                                                        <div className="h-12 w-12 shrink-0 bg-indigo-50 rounded-xl flex items-center justify-center text-xl shadow-inner">
+                                                            {config.icon}
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="text-sm font-bold text-gray-900 truncate">
+                                                                {config.label}
+                                                            </p>
+                                                            <div className="flex items-center gap-1 mt-1">
+                                                                <span className="text-[10px] text-indigo-500 font-bold uppercase">Within</span>
+                                                                <input 
+                                                                    type="number"
+                                                                    step="0.1"
+                                                                    min="0.1"
+                                                                    max="50"
+                                                                    value={poi.max_miles}
+                                                                    onChange={(e) => {
+                                                                        const val = parseFloat(e.target.value) || 1.0;
+                                                                        setFormData(prev => ({
+                                                                            ...prev,
+                                                                            poi_proximity: prev.poi_proximity.map(p => 
+                                                                                p.poi_type === poi.poi_type ? { ...p, max_miles: val } : p
+                                                                            )
+                                                                        }));
+                                                                    }}
+                                                                    className="w-16 h-7 px-2 text-xs rounded-lg border-gray-300 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                                                                />
+                                                                <span className="text-[10px] text-indigo-500 font-bold uppercase">mi radius</span>
+                                                            </div>
+                                                        </div>
+                                                        <button 
+                                                            type="button"
+                                                            onClick={() => setFormData(prev => ({
+                                                                ...prev,
+                                                                poi_proximity: prev.poi_proximity.filter(p => p.poi_type !== poi.poi_type)
+                                                            }))}
+                                                            className="h-10 w-10 flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                                                        >
+                                                            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                            </svg>
+                                                        </button>
+                                                    </div>
+                                                );
+                                            })}
+
+                                            {/* Custom Pins */}
+                                            {formData.proximity_pins.map((pin, idx) => (
+                                                <div key={`custom-${idx}`} className="flex items-center gap-4 bg-white p-4 rounded-2xl border-2 border-indigo-50 shadow-sm hover:border-indigo-150 transition-all">
+                                                    <div className="h-12 w-12 shrink-0 bg-indigo-50 rounded-xl flex items-center justify-center text-xl shadow-inner">
+                                                        📍
+                     </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-sm font-bold text-gray-900 truncate">
+                                                            {pin.label ? <span className="text-indigo-600 mr-2">{pin.label}</span> : ''}
+                                                            {pin.query}
+                                                        </p>
+                                                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mt-1">
+                                                            {pin.type === 'commute' 
+                                                                ? `${pin.value} min ${pin.mode} commute` 
+                                                                : `Within ${pin.value} mile radius`}
+                                                        </p>
+                                                    </div>
+                                                    <button 
+                                                        type="button"
+                                                        onClick={() => setFormData(prev => ({
+                                                            ...prev,
+                                                            proximity_pins: prev.proximity_pins.filter((_, i) => i !== idx)
+                                                        }))}
+                                                        className="h-10 w-10 flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                                                    >
+                                                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
                             {/* Action Buttons */}
                             <div className="mt-6 flex gap-4">
                                 <button
@@ -478,7 +859,8 @@ export default function Search({ auth, properties, filters, geocodingError }) {
                                 </button>
                             </div>
                         </form>
-                    </div>
+                    )}
+                </div>
 
                     {/* Results */}
                     <div>
@@ -492,7 +874,13 @@ export default function Search({ auth, properties, filters, geocodingError }) {
                             <>
                                 <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
                                     {properties.data.map((property) => (
-                                        <PropertyCard key={property.id} property={property} />
+                                        <PropertyCard 
+                                            key={property.id} 
+                                            property={property} 
+                                            searchContext={{ 
+                                                resolvedPins 
+                                            }}
+                                        />
                                     ))}
                                 </div>
 

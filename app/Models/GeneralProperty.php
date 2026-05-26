@@ -10,6 +10,21 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class GeneralProperty extends Model
 {
+    /**
+     * The "booted" method of the model.
+     */
+    protected static function booted(): void
+    {
+        static::saved(function (GeneralProperty $property) {
+            // Only dispatch if coordinates are present AND have been changed (or it's a new record)
+            if ($property->latitude && $property->longitude) {
+                if ($property->wasRecentlyCreated || $property->isDirty(['latitude', 'longitude'])) {
+                    \App\Jobs\ComputePropertyPOIJob::dispatch($property);
+                }
+            }
+        });
+    }
+
     protected $fillable = [
         'agent_id',
         'name',
@@ -75,5 +90,13 @@ class GeneralProperty extends Model
     public function enquiries(): HasMany
     {
         return $this->hasMany(PropertyEnquiry::class);
+    }
+
+    /**
+     * Get cached POIs for this property.
+     */
+    public function poiCache(): HasMany
+    {
+        return $this->hasMany(PropertyPOICache::class);
     }
 }

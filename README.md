@@ -18,6 +18,13 @@
     *   **Postcodes.io:** Public UK postal sector approximations.
     *   **Google Gemini:** Search param extraction from complex natural language.
 
+## Roadmap & Technical Debt
+
+*   **Precision Circular Filtering (Accuracy vs. Performance):**
+    *   **Current State:** Proximity searches (landmarks & POIs) use SQL Bounding Boxes (Square). This is highly performant but can be imprecise (up to 27% larger area than a circle).
+    - **Future Goal:** Implement a hybrid model where initial candidates are fetched via SQL, then refined in the PHP Collection layer using exact Haversine math for perfect circular radii.
+*   **Geospatial Cache Warming:** Pre-calculating common landmark coordinates to reduce first-hit latency.
+
 ---
 
 <p align="center">

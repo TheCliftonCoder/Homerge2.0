@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { router, usePage } from '@inertiajs/react';
 
-export default function PropertyCard({ property, isFavourited = false }) {
+export default function PropertyCard({ property, isFavourited = false, searchContext = {} }) {
     const { auth } = usePage().props;
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
     const [favourited, setFavourited] = useState(isFavourited);
+    const [activeLocation, setActiveLocation] = useState(null);
 
     const images = property.images || [];
     const hasImages = images.length > 0;
@@ -24,6 +25,41 @@ export default function PropertyCard({ property, isFavourited = false }) {
             month: 'short',
             day: 'numeric',
         });
+    };
+
+    const getPoiIcon = (type) => {
+        const icons = {
+            train_station: '🚂',
+            school: '🎓',
+            hospital: '🏥',
+            supermarket: '🛒',
+            gym: '💪',
+            park: '🌳'
+        };
+        return icons[type] || '📍';
+    };
+
+    const getTravelTimeStr = (miles, mode = 'walking') => {
+        if (mode === 'walking') {
+            const mins = Math.round(miles * 20); // 3mph
+            return `~${mins} min walk`;
+        }
+        if (mode === 'driving') {
+            const mins = Math.round(miles * 3); // 20mph urban avg
+            return `~${mins} min drive`;
+        }
+        return '';
+    };
+
+    const calculateDistance = (lat1, lon1, lat2, lon2) => {
+        const R = 3959; // Miles
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
     };
 
     const nextImage = () => {
@@ -88,8 +124,135 @@ export default function PropertyCard({ property, isFavourited = false }) {
                             </span>
                             {property.distance_miles !== undefined && property.distance_miles !== null && (
                                 <span className="text-sm font-medium text-indigo-600 mt-0.5">
-                                    {Number(property.distance_miles).toFixed(1)} miles away
+                                    {Number(property.distance_miles).toFixed(1)} miles from search center
                                 </span>
+                            )}
+
+                            {/* Proximity Badges */}
+                            <div className="flex flex-wrap gap-2 mt-3">
+                                {/* Mode 1: POIs */}
+                                {property.poi_cache?.map((poi, idx) => {
+                                    const isSelected = activeLocation?.key === `poi-${poi.poi_type}`;
+                                    return (
+                                        <button
+                                            key={`poi-${idx}`}
+                                            type="button"
+                                            onClick={() => setActiveLocation(prev => 
+                                                prev?.key === `poi-${poi.poi_type}` 
+                                                    ? null 
+                                                    : { 
+                                                        key: `poi-${poi.poi_type}`, 
+                                                        label: poi.poi_type.replace('_', ' '), 
+                                                        icon: getPoiIcon(poi.poi_type), 
+                                                        name: poi.name, 
+                                                        lat: poi.latitude, 
+                                                        lng: poi.longitude 
+                                                    }
+                                            )}
+                                            className={`flex items-center gap-1.5 border px-2.5 py-1 rounded-full text-[10px] font-bold shadow-sm hover:scale-105 active:scale-95 transition-all ${
+                                                isSelected 
+                                                    ? 'bg-indigo-600 border-indigo-700 text-white' 
+                                                    : 'bg-white/80 border-indigo-100 text-indigo-700 hover:bg-indigo-50'
+                                            }`}
+                                        >
+                                            <span>{getPoiIcon(poi.poi_type)}</span>
+                                            <span>{Number(poi.distance_miles).toFixed(1)}mi</span>
+                                            <span className={`font-medium whitespace-nowrap ${isSelected ? 'text-indigo-200' : 'text-gray-400'}`}>· {getTravelTimeStr(poi.distance_miles, 'walking')}</span>
+                                        </button>
+                                    );
+                                })}
+
+                                {/* Pins (Distance or Commute) */}
+                                {searchContext?.resolvedPins?.map((pin, idx) => {
+                                    const isSelected = activeLocation?.key === `pin-${idx}`;
+                                    if (pin.type === 'radius') {
+                                        const dist = calculateDistance(property.latitude, property.longitude, pin.lat || 0, pin.lng || 0);
+                                        return (
+                                            <button
+                                                key={`pin-${idx}`}
+                                                type="button"
+                                                onClick={() => setActiveLocation(prev => 
+                                                    prev?.key === `pin-${idx}` 
+                                                        ? null 
+                                                        : { 
+                                                            key: `pin-${idx}`, 
+                                                            label: pin.label || pin.query, 
+                                                            icon: '📍', 
+                                                            name: pin.resolved_name || pin.query, 
+                                                            lat: pin.lat, 
+                                                            lng: pin.lng 
+                                                        }
+                                                )}
+                                                className={`flex items-center gap-1.5 border px-2.5 py-1 rounded-full text-[10px] font-bold shadow-sm hover:scale-105 active:scale-95 transition-all ${
+                                                    isSelected 
+                                                        ? 'bg-amber-600 border-amber-700 text-white' 
+                                                        : 'bg-amber-50 border-amber-100 text-amber-700 hover:bg-amber-100'
+                                                }`}
+                                            >
+                                                <span>📍</span>
+                                                <span>{pin.label || pin.query}: {Number(dist).toFixed(1)}mi</span>
+                                            </button>
+                                        );
+                                    }
+                                    
+                                    if (pin.type === 'commute') {
+                                        return (
+                                            <button
+                                                key={`pin-${idx}`}
+                                                type="button"
+                                                onClick={() => setActiveLocation(prev => 
+                                                    prev?.key === `pin-${idx}` 
+                                                        ? null 
+                                                        : { 
+                                                            key: `pin-${idx}`, 
+                                                            label: pin.label || pin.query, 
+                                                            icon: pin.mode === 'driving' ? '🚗' : pin.mode === 'cycling' ? '🚲' : '🚶', 
+                                                            name: pin.resolved_name || pin.query, 
+                                                            lat: pin.lat, 
+                                                            lng: pin.lng 
+                                                        }
+                                                )}
+                                                className={`flex items-center gap-1.5 border px-2.5 py-1 rounded-full text-[10px] font-bold shadow-sm hover:scale-105 active:scale-95 transition-all ${
+                                                    isSelected 
+                                                        ? 'bg-emerald-600 border-emerald-700 text-white' 
+                                                        : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+                                                }`}
+                                            >
+                                                <span>{pin.mode === 'driving' ? '🚗' : pin.mode === 'cycling' ? '🚲' : '🚶'}</span>
+                                                <span>{pin.label || pin.query}: Under {pin.minutes}m</span>
+                                            </button>
+                                        );
+                                    }
+                                    return null;
+                                })}
+                            </div>
+
+                            {/* Proximity Location Detail Bubble */}
+                            {activeLocation && (
+                                <div className="mt-4 p-4 bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-150 rounded-2xl text-xs text-indigo-900 shadow-md animate-in slide-in-from-top-2 duration-300 relative">
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setActiveLocation(null)}
+                                        className="absolute right-4 top-3 text-gray-400 hover:text-gray-700 transition-colors"
+                                        title="Close"
+                                    >
+                                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                    <div className="flex items-center gap-2 mb-1.5 pr-6">
+                                        <span className="text-base">{activeLocation.icon}</span>
+                                        <span className="font-extrabold uppercase tracking-wider text-[10px] text-indigo-600">
+                                            Nearest {activeLocation.label}
+                                        </span>
+                                    </div>
+                                    <p className="font-bold text-sm text-gray-900 leading-tight">
+                                        {activeLocation.name || 'Unnamed location'}
+                                    </p>
+                                    <p className="text-[10px] text-gray-500 mt-2 font-mono bg-white/60 inline-block px-2 py-0.5 rounded border border-gray-100">
+                                        Lat: {Number(activeLocation.lat).toFixed(6)}, Lng: {Number(activeLocation.lng).toFixed(6)}
+                                    </p>
+                                </div>
                             )}
                         </div>
                     </div>

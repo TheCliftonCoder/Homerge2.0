@@ -14,13 +14,16 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 use App\Services\GeocodingService;
+use App\Services\IsochroneService;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class PropertyController extends Controller
 {
-    public function __construct(private GeocodingService $geocoder)
-    {
+    public function __construct(
+        private GeocodingService $geocoder,
+        private IsochroneService $isochrone
+    ) {
     }
 
     /**
@@ -72,7 +75,7 @@ class PropertyController extends Controller
      */
     public function search(Request $request): Response
     {
-        $query = GeneralProperty::with(['agent', 'images', 'propertyCategory.transaction']);
+        $query = GeneralProperty::with(['agent', 'images', 'propertyCategory.transaction', 'poiCache']);
 
         $geocodingError = null;
         $searchCoords = null;
@@ -210,6 +213,109 @@ class PropertyController extends Controller
             });
         }
 
+        // POI Proximity Filters (Mode 1)
+        if ($request->filled('poi_proximity')) {
+            $poiFilters = is_array($request->poi_proximity) ? $request->poi_proximity : json_decode($request->poi_proximity, true);
+            if (is_array($poiFilters)) {
+                $poiFilters = $this->normalizeProximityFilters($poiFilters);
+                foreach ($poiFilters as $pf) {
+                    if (isset($pf['poi_type']) && isset($pf['max_miles'])) {
+                        $query->whereHas('poiCache', function($q) use ($pf) {
+                            $q->where('poi_type', $pf['poi_type'])
+                              ->where('distance_miles', '<=', (float) $pf['max_miles']);
+                        });
+                    }
+                }
+            }
+        }
+
+        // Proximity Pins (Mode 2 & 3 Unified)
+        $resolvedPins = [];
+        $geocodingErrors = [];
+        $locationContext = $request->location ? ", " . $request->location : "";
+        $commutePinFilters = [];
+        $radiusPinFilters = [];
+
+        if ($request->filled('proximity_pins')) {
+            $pins = is_array($request->proximity_pins) ? $request->proximity_pins : json_decode($request->proximity_pins, true);
+            if (is_array($pins)) {
+                $pins = $this->normalizeProximityFilters($pins);
+                foreach ($pins as $pin) {
+                    if (empty($pin['query'])) continue;
+
+                    // Append location context to improve geocoding accuracy for local landmarks
+                    $queryText = $pin['query'] . $locationContext;
+                    $coords = $this->geocoder->geocodeAddress($queryText);
+
+                    if (!$coords) {
+                        $geocodingErrors[] = "Could not find landmark: \"{$pin['query']}\"";
+                        continue;
+                    }
+
+                    $pinType = $pin['type'] ?? 'commute'; // Default to commute if not specified
+
+                    if ($pinType === 'commute') {
+                        $mode = $pin['mode'] ?? 'driving';
+                        $mins = (int) ($pin['value'] ?? 20);
+                        
+                        $isoPolygons = $this->isochrone->getPolygons($coords['lat'], $coords['lng'], $mode, $mins);
+                        
+                        if ($isoPolygons) {
+                            $commutePinFilters[] = [
+                                'polygons' => $isoPolygons,
+                                'mode' => $mode,
+                                'minutes' => $mins,
+                                'label' => $pin['label'] ?? null,
+                                'query' => $pin['query']
+                            ];
+
+                            $resolvedPins[] = [
+                                'type' => 'commute',
+                                'label' => $pin['label'] ?? null,
+                                'query' => $pin['query'],
+                                'resolved_name' => $coords['resolved_name'],
+                                'lat' => $coords['lat'],
+                                'lng' => $coords['lng'],
+                                'mode' => $mode,
+                                'minutes' => $mins
+                            ];
+                        }
+                    } else {
+                        // Radius / Distance pin
+                        $radius = (float) ($pin['value'] ?? 1.0);
+                        $radiusPinFilters[] = [
+                            'lat' => $coords['lat'],
+                            'lng' => $coords['lng'],
+                            'radius' => $radius,
+                            'label' => $pin['label'] ?? null,
+                            'query' => $pin['query']
+                        ];
+
+                        $resolvedPins[] = [
+                            'type' => 'radius',
+                            'label' => $pin['label'] ?? null,
+                            'query' => $pin['query'],
+                            'resolved_name' => $coords['resolved_name'],
+                            'lat' => $coords['lat'],
+                            'lng' => $coords['lng'],
+                            'max_miles' => $radius
+                        ];
+
+                        // Apply a SQL bounding box pre-filter for performance
+                        $latRange = $radius / 69.0;
+                        $lngRange = $radius / abs(cos(deg2rad($coords['lat'])) * 69.0);
+                        $query->whereBetween('latitude', [$coords['lat'] - $latRange, $coords['lat'] + $latRange])
+                              ->whereBetween('longitude', [$coords['lng'] - $lngRange, $coords['lng'] + $lngRange]);
+                    }
+
+                    // If we have no primary location searchCoords, use the first pin as the result anchor
+                    if ($searchCoords === null) {
+                        $searchCoords = $coords;
+                    }
+                }
+            }
+        }
+
         // Order by distance if available, otherwise most recent
         if ($request->filled('location') && $request->filled('radius') && floatval($request->radius) > 0 && empty($geocodingError)) {
             $query->orderBy('distance_approx', 'asc');
@@ -217,36 +323,132 @@ class PropertyController extends Controller
             $query->orderBy('created_at', 'desc');
         }
 
-        // Paginate results
-        $properties = $query->paginate(12)->withQueryString();
+        // 1. Initial SQL Pagination
+        $perPage = 12;
+        $page = $request->input('page', 1);
 
-        // Calculate exact distance for display using PHP Haversine formula (SQLite compatible)
-        if ($searchCoords !== null) {
-            $lat = $searchCoords['lat'];
-            $lng = $searchCoords['lng'];
-            $properties->getCollection()->transform(function ($property) use ($lat, $lng) {
-                if (!$property->latitude || !$property->longitude) return $property;
-                
-                $earthRadius = 3959; // miles
-                $dLat = deg2rad($property->latitude - $lat);
-                $dLon = deg2rad($property->longitude - $lng);
-                $a = sin($dLat/2) * sin($dLat/2) + cos(deg2rad($lat)) * cos(deg2rad($property->latitude)) * sin($dLon/2) * sin($dLon/2);
-                $c = 2 * asin(sqrt($a));
-                
-                $property->setAttribute('distance_miles', $earthRadius * $c);
-                return $property;
-            });
+        // Decide if we need manual collection-level filtering (if pins are present)
+        $requiresManualFiltering = !empty($commutePinFilters) || !empty($radiusPinFilters);
+
+        if ($requiresManualFiltering) {
+            // Pre-filter with a broad bounding box if any commute pins exist
+            if (!empty($commutePinFilters)) {
+                $firstIso = $commutePinFilters[0];
+                $isoCoords = $this->geocoder->geocodeAddress($firstIso['query']);
+                if ($isoCoords) {
+                    $query->whereBetween('latitude', [$isoCoords['lat'] - 1.0, $isoCoords['lat'] + 1.0])
+                          ->whereBetween('longitude', [$isoCoords['lng'] - 1.0, $isoCoords['lng'] + 1.0]);
+                }
+            }
+
+            // Fetch ALL matching candidates for precise testing
+            $allCandidates = $query->get();
+
+            // Calculate exact distance for result display (anchored to searchCoords)
+            if ($searchCoords !== null) {
+                $lat = $searchCoords['lat'];
+                $lng = $searchCoords['lng'];
+                $allCandidates->transform(function ($property) use ($lat, $lng) {
+                    if (!$property->latitude || !$property->longitude) return $property;
+                    $earthRadius = 3959; 
+                    $dLat = deg2rad($property->latitude - $lat);
+                    $dLon = deg2rad($property->longitude - $lng);
+                    $a = sin($dLat/2) * sin($dLat/2) + cos(deg2rad($lat)) * cos(deg2rad($property->latitude)) * sin($dLon/2) * sin($dLon/2);
+                    $c = 2 * asin(sqrt($a));
+                    $property->setAttribute('distance_miles', $earthRadius * $c);
+                    return $property;
+                });
+            }
+
+            // Apply intersection filtering (Property must satisfy ALL pins)
+            $filtered = $allCandidates->filter(function ($property) use ($commutePinFilters, $radiusPinFilters) {
+                if (!$property->latitude || !$property->longitude) return false;
+
+                // Check all commutes (Isochrones)
+                foreach ($commutePinFilters as $cpf) {
+                    if (!$this->isochrone->isPointInRange($property->latitude, $property->longitude, $cpf['polygons']['offpeak'])) {
+                        return false;
+                    }
+                }
+
+                // Check all Radii (Haversine precision)
+                foreach ($radiusPinFilters as $rpf) {
+                    $earthRadius = 3959;
+                    $dLat = deg2rad($property->latitude - $rpf['lat']);
+                    $dLon = deg2rad($property->longitude - $rpf['lng']);
+                    $a = sin($dLat/2) * sin($dLat/2) + cos(deg2rad($rpf['lat'])) * cos(deg2rad($property->latitude)) * sin($dLon/2) * sin($dLon/2);
+                    $c = 2 * asin(sqrt($a));
+                    if (($earthRadius * $c) > $rpf['radius']) {
+                        return false;
+                    }
+                }
+
+                return true;
+            })->values();
+
+            // Manual Pagination
+            $totalCount = $filtered->count();
+            $pagedItems = $filtered->forPage($page, $perPage)->values();
+
+            $properties = new \Illuminate\Pagination\LengthAwarePaginator(
+                $pagedItems, $totalCount, $perPage, $page,
+                ['path' => $request->url(), 'query' => $request->query()]
+            );
+        } else {
+            // Standard SQL Pagination
+            $properties = $query->paginate($perPage)->withQueryString();
+
+            if ($searchCoords !== null) {
+                $lat = $searchCoords['lat'];
+                $lng = $searchCoords['lng'];
+                $properties->getCollection()->transform(function ($property) use ($lat, $lng) {
+                    if (!$property->latitude || !$property->longitude) return $property;
+                    $earthRadius = 3959;
+                    $dLat = deg2rad($property->latitude - $lat);
+                    $dLon = deg2rad($property->longitude - $lng);
+                    $a = sin($dLat/2) * sin($dLat/2) + cos(deg2rad($lat)) * cos(deg2rad($property->latitude)) * sin($dLon/2) * sin($dLon/2);
+                    $c = 2 * asin(sqrt($a));
+                    $property->setAttribute('distance_miles', $earthRadius * $c);
+                    return $property;
+                });
+            }
         }
 
         return Inertia::render('Properties/Search', [
             'properties' => $properties,
-            'filters' => $request->only([
-                'location', 'radius', 'min_price', 'max_price', 'property_category', 'transaction_type',
-                'bedrooms', 'bathrooms', 'property_type', 'parking', 'garden',
-                'min_size', 'max_size', 'tenure', 'furnished', 'pets_allowed', 'available_from'
-            ]),
+            'filters' => $request->all(),
             'geocodingError' => $geocodingError,
+            'geocodingErrors' => $geocodingErrors,
+            'resolvedPins' => $resolvedPins,
         ]);
+    }
+
+    /**
+     * Resiliently parse proximity filters that might have been mangled/split in the URL.
+     * e.g. [0 => {query: "X"}, 1 => {max_miles: 1}] -> [0 => {query: "X", max_miles: 1}]
+     */
+    private function normalizeProximityFilters(array $filters): array
+    {
+        $normalized = [];
+        $temp = [];
+        
+        foreach ($filters as $item) {
+            foreach ($item as $key => $value) {
+                // If this key already exists in our temp object, it belongs to the next "row"
+                // OR if it's a completely different PIN object
+                if (isset($temp[$key])) {
+                    $normalized[] = $temp;
+                    $temp = [];
+                }
+                $temp[$key] = $value;
+            }
+        }
+        
+        if (!empty($temp)) {
+            $normalized[] = $temp;
+        }
+        
+        return $normalized;
     }
 
 

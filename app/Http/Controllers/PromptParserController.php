@@ -114,7 +114,7 @@ Keys and allowed values:
 - property_type: one of "detached","semi_detached","terraced","flat","bungalow" or null
 - location: string (UK town/city) or null
 - radius: integer in miles or null (e.g., "within 10 miles of X" -> 10, "near X" -> 5)
-- min_price: integer in GBP or null  (for rentals, interpret monthly rent)
+- min_price: integer in GBP or null (for rentals, interpret monthly rent)
 - max_price: integer in GBP or null
 - bedrooms: integer (exact number) or null
 - bathrooms: integer (exact number) or null
@@ -122,6 +122,17 @@ Keys and allowed values:
 - garden: "1" if mentioned, else null
 - furnished: "furnished" or "unfurnished" or null
 - pets_allowed: "1" if mentioned, else null
+- proximity_pins: array of objects { "type": "radius"|"commute", "query": string, "label": string|null, "value": number, "mode": "driving"|"walking"|"cycling"|null } or null. 
+  **CRITICAL**: Use this for all specific landmarks/addresses.
+  - Set "type" to "commute" if "min", "minutes", "drive", "walk" or "commute" is mentioned.
+  - Set "type" to "radius" if "miles", "miles away" or a distance is specifically mentioned without a time.
+  - "label": Extract a friendly name if possible (e.g. "near my office" -> "Office", "near the station" -> "Station").
+  - "value": The number of minutes (for commute) or miles (for radius). Default commute to 20, default radius to 1.0.
+  - "mode": Only for commute. Default to "driving" if not specified.
+- poi_proximity: array of objects { "poi_type": string, "max_miles": number } or null. 
+  Allowed poi_types: "train_station", "school", "hospital", "supermarket", "gym", "park". 
+  **CRITICAL**: Use this for generic category requests (e.g. "near a supermarket", "close to a school").
+  Example: "near a station" -> { "poi_type": "train_station", "max_miles": 1.0 }
 
 Return ONLY the JSON object, no markdown, no explanation.
 PROMPT;
