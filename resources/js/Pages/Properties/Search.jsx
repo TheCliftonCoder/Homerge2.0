@@ -223,7 +223,7 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                         onClick={() => setIsFiltersCollapsed(false)}
                                         className="rounded-xl border-2 border-indigo-200 bg-white px-5 py-2.5 text-sm font-bold text-indigo-700 transition-all hover:bg-indigo-50 hover:border-indigo-300 active:scale-95 shadow-sm"
                                     >
-                                        Modify Search
+                                        Manually Modify Search
                                     </button>
                                     <button
                                         onClick={handleClear}
