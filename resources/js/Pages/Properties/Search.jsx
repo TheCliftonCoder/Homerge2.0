@@ -907,7 +907,6 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                             : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
                                     }`}
                                 >
-                                    <span>⚙️</span>
                                     {showDebugger ? 'Hide Debugger' : 'Show AI Debugger'}
                                 </button>
                             )}
@@ -918,7 +917,7 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                 {/* Debugger Header / Tab Bar */}
                                 <div className="flex border-b border-slate-800 bg-slate-950/80 px-4 py-3 items-center justify-between">
                                     <div className="flex items-center gap-4">
-                                        <span className="text-indigo-400 font-bold text-sm">🕵️‍♂️ AI PROXIMITY INSPECTOR</span>
+                                        <span className="text-indigo-400 font-bold text-sm">AI PROXIMITY INSPECTOR</span>
                                         <div className="flex gap-2">
                                             {['parser', 'mapbox', 'sql'].map(tab => (
                                                 <button
