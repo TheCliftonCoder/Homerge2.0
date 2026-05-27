@@ -1,5 +1,5 @@
 import { Head, Link, router } from '@inertiajs/react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 const PROMPTS = [
     '3 bed house Reading',
@@ -13,33 +13,47 @@ export default function Welcome({ auth }) {
     const [prompt, setPrompt] = useState('');
     const [promptLoading, setPromptLoading] = useState(false);
     const [promptError, setPromptError] = useState('');
+    const [isFocused, setIsFocused] = useState(false);
+
+    // Keep animation progress in refs so it can resume exactly where it left off
+    const animationStateRef = useRef({
+        currentPromptIndex: 0,
+        currentCharIndex: 0,
+        isDeleting: false,
+    });
 
     useEffect(() => {
-        let currentPromptIndex = 0;
-        let currentCharIndex = 0;
-        let isDeleting = false;
+        // Pause animation when focused or if user has entered search text
+        if (isFocused || prompt.trim().length > 0) {
+            if (isFocused) {
+                setPlaceholder('');
+            }
+            return;
+        }
+
         let typingSpeed = 100;
         let timer = null;
 
         const tick = () => {
-            const fullText = PROMPTS[currentPromptIndex];
+            const state = animationStateRef.current;
+            const fullText = PROMPTS[state.currentPromptIndex];
             
-            if (isDeleting) {
-                setPlaceholder(fullText.substring(0, currentCharIndex - 1));
-                currentCharIndex--;
+            if (state.isDeleting) {
+                setPlaceholder(fullText.substring(0, state.currentCharIndex - 1));
+                state.currentCharIndex--;
                 typingSpeed = 50; // faster when deleting
             } else {
-                setPlaceholder(fullText.substring(0, currentCharIndex + 1));
-                currentCharIndex++;
+                setPlaceholder(fullText.substring(0, state.currentCharIndex + 1));
+                state.currentCharIndex++;
                 typingSpeed = 100; // standard typing speed
             }
 
-            if (!isDeleting && currentCharIndex === fullText.length) {
+            if (!state.isDeleting && state.currentCharIndex === fullText.length) {
                 typingSpeed = 2000; // pause at the end
-                isDeleting = true;
-            } else if (isDeleting && currentCharIndex === 0) {
-                isDeleting = false;
-                currentPromptIndex = (currentPromptIndex + 1) % PROMPTS.length;
+                state.isDeleting = true;
+            } else if (state.isDeleting && state.currentCharIndex === 0) {
+                state.isDeleting = false;
+                state.currentPromptIndex = (state.currentPromptIndex + 1) % PROMPTS.length;
                 typingSpeed = 500; // pause before typing next
             }
 
@@ -47,8 +61,10 @@ export default function Welcome({ auth }) {
         };
 
         timer = setTimeout(tick, typingSpeed);
-        return () => clearTimeout(timer);
-    }, []);
+        return () => {
+            if (timer) clearTimeout(timer);
+        };
+    }, [isFocused, prompt]);
 
     const handleSearch = async (e) => {
         if (e) e.preventDefault();
@@ -164,6 +180,8 @@ export default function Welcome({ auth }) {
                                     placeholder={placeholder}
                                     value={prompt}
                                     onChange={e => setPrompt(e.target.value)}
+                                    onFocus={() => setIsFocused(true)}
+                                    onBlur={() => setIsFocused(false)}
                                     className="flex-1 bg-transparent border-0 pl-4 pr-2 py-3 text-base text-gray-900 focus:outline-none focus:ring-0 placeholder-gray-400"
                                 />
                                 <button
