@@ -78,7 +78,9 @@ Keys and allowed values:
 - price_max: integer in GBP or null
 - bedrooms_min: integer or null
 - bedrooms_max: integer or null
-- property_type: one of "detached","semi_detached","terraced","flat","bungalow" or null
+- property_type: one of "detached","semi_detached","terraced","flat","bungalow" or null.
+  - Map "apartment" or "maisonette" to "flat".
+  - Map generic terms like "house", "home", "property", "place" to null (set transaction_type or category as appropriate instead). Do NOT output "house" as a value.
 - location: string (UK town/city) or null
 - last_activity: one of "24h","48h","7d","1m","6m" or null
 - activity_level: one of "low","medium","high" or null
@@ -110,7 +112,9 @@ Use null for any filter the query does not mention.
 Keys and allowed values:
 - transaction_type: "sale" or "rental" or null
 - property_category: "residential" or "commercial" or null
-- property_type: one of "detached","semi_detached","terraced","flat","bungalow" or null
+- property_type: one of "detached","semi_detached","terraced","flat","bungalow" or null.
+  - Map "apartment" or "maisonette" to "flat".
+  - Map generic terms like "house", "home", "property", "place" to null (set property_category to "residential" instead). Do NOT output "house" as a value.
 - location: string (UK town/city) or null
 - radius: integer in miles or null (e.g., "within 10 miles of X" -> 10, "near X" -> 5)
 - min_price: integer in GBP or null (for rentals, interpret monthly rent)

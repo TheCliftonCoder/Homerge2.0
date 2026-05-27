@@ -4,7 +4,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import PublicLayout from '@/Layouts/PublicLayout';
 import PropertyCard from '@/Components/PropertyCard';
 
-export default function Search({ auth, properties, filters, geocodingError, geocodingErrors = [], resolvedPins = [], isochroneResolved = null }) {
+export default function Search({ auth, properties, filters, geocodingError, geocodingErrors = [], resolvedPins = [], isochroneResolved = null, appDebug = false, debugInfo = null }) {
     const [isFiltersCollapsed, setIsFiltersCollapsed] = useState(properties.total > 0);
     const [pinFormMode, setPinFormMode] = useState('commute'); // 'commute' or 'radius'
     const [pinQuery, setPinQuery] = useState('');
@@ -15,6 +15,9 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
     const [prompt, setPrompt] = useState('');
     const [promptLoading, setPromptLoading] = useState(false);
     const [promptError, setPromptError] = useState('');
+    const [showDebugger, setShowDebugger] = useState(false);
+    const [lastParsedFilters, setLastParsedFilters] = useState(null);
+    const [debugTab, setDebugTab] = useState('parser');
 
     const [formData, setFormData] = useState({
         location: filters.location || '',
@@ -88,7 +91,10 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
 
     const Layout = auth?.user ? AuthenticatedLayout : PublicLayout;
 
-    const activeFilterCount = Object.values(formData).filter(v => v !== '').length;
+    const activeFilterCount = Object.entries(formData).filter(([key, v]) => {
+        if (Array.isArray(v)) return v.length > 0;
+        return v !== '' && v !== null && v !== undefined;
+    }).length;
 
     // AI prompt handler
     const handlePrompt = async () => {
@@ -105,6 +111,10 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
             const data = await res.json();
             if (!res.ok) { setPromptError(data.error || 'Something went wrong.'); return; }
             const f = data.filters;
+            setLastParsedFilters(f);
+            if (appDebug) {
+                setShowDebugger(true);
+            }
             const merged = {
                 ...formData,
                 ...(f.transaction_type !== null && f.transaction_type !== undefined ? { transaction_type: f.transaction_type } : {}),
@@ -152,7 +162,9 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                     <div className="mb-6 rounded-2xl bg-gradient-to-r from-indigo-50 to-violet-50 border border-indigo-100 shadow-lg p-6">
                         <div className="flex items-center gap-2 mb-3">
                             <span className="text-lg">✨</span>
-                            <p className="text-sm font-semibold text-indigo-700 uppercase tracking-widest">Search by AI prompt</p>
+                            <p className="text-sm font-semibold text-indigo-700 uppercase tracking-widest">
+                                {activeFilterCount > 0 ? 'Update search by AI prompt' : 'Search by AI prompt'}
+                            </p>
                         </div>
                         <div className="flex gap-3">
                             <textarea
@@ -173,7 +185,7 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
                                     </svg>
-                                ) : 'Ask AI'}
+                                ) : (activeFilterCount > 0 ? 'Update Search' : 'Ask AI')}
                             </button>
                         </div>
                         {promptError && <p className="mt-2 text-sm text-red-600">{promptError}</p>}
@@ -197,8 +209,14 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                         </p>
                                         <div className="flex gap-1.5 flex-wrap">
                                             {[
-                                                formData.property_category,
-                                                formData.transaction_type,
+                                                formData.property_category && (
+                                                    <span key="category" className="bg-sky-50 text-sky-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase border border-sky-100">{formData.property_category}</span>
+                                                ),
+                                                formData.transaction_type && (
+                                                    <span key="transaction" className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase border border-indigo-100">
+                                                        {formData.transaction_type === 'sale' ? 'For Sale' : 'For Rent'}
+                                                    </span>
+                                                ),
                                                 formData.bedrooms && (
                                                     <span key="beds" className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase">{formData.bedrooms}+ Beds</span>
                                                 ),
@@ -248,7 +266,9 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                     </svg>
                                 </button>
                                 <div className="mb-6 flex items-center justify-between pr-10">
-                                    <h1 className="text-3xl font-bold text-gray-900">Search Properties</h1>
+                                    <h1 className="text-3xl font-bold text-gray-900">
+                                        {activeFilterCount > 0 ? 'Update Search' : 'Search Properties'}
+                                    </h1>
                                     {activeFilterCount > 0 && (
                                         <span className="rounded-full bg-indigo-100 px-4 py-2 text-sm font-semibold text-indigo-700">
                                             {activeFilterCount} {activeFilterCount === 1 ? 'filter' : 'filters'} active
@@ -367,7 +387,7 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
 
                                 {/* Transaction Type */}
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700">Type</label>
+                                    <label className="block text-sm font-medium text-gray-700">Transaction Type</label>
                                     <select
                                         name="transaction_type"
                                         value={formData.transaction_type}
@@ -821,7 +841,7 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                                 <div key={`custom-${idx}`} className="flex items-center gap-4 bg-white p-4 rounded-2xl border-2 border-indigo-50 shadow-sm hover:border-indigo-150 transition-all">
                                                     <div className="h-12 w-12 shrink-0 bg-indigo-50 rounded-xl flex items-center justify-center text-xl shadow-inner">
                                                         📍
-                     </div>
+                                                    </div>
                                                     <div className="flex-1 min-w-0">
                                                         <p className="text-sm font-bold text-gray-900 truncate">
                                                             {pin.label ? <span className="text-indigo-600 mr-2">{pin.label}</span> : ''}
@@ -858,7 +878,7 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                     type="submit"
                                     className="flex-1 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-3 font-semibold text-white shadow-lg transition-all hover:from-indigo-700 hover:to-purple-700 hover:shadow-xl"
                                 >
-                                    Search Properties
+                                    {activeFilterCount > 0 ? 'Update Search' : 'Search Properties'}
                                 </button>
                                 <button
                                     type="button"
@@ -878,7 +898,164 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                             <h2 className="text-xl font-bold text-gray-900">
                                 {properties.total} {properties.total === 1 ? 'Property' : 'Properties'} Found
                             </h2>
+                            {appDebug && (
+                                <button
+                                    onClick={() => setShowDebugger(prev => !prev)}
+                                    className={`rounded-xl px-4 py-2 text-xs font-bold transition-all border shadow-sm flex items-center gap-1.5 active:scale-95 ${
+                                        showDebugger 
+                                            ? 'bg-gray-905 bg-slate-900 border-slate-900 text-white hover:bg-black' 
+                                            : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    <span>⚙️</span>
+                                    {showDebugger ? 'Hide Debugger' : 'Show AI Debugger'}
+                                </button>
+                            )}
                         </div>
+
+                        {appDebug && showDebugger && (
+                            <div className="mb-6 rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl overflow-hidden text-slate-100 font-mono text-xs animate-in slide-in-from-top-4 duration-300">
+                                {/* Debugger Header / Tab Bar */}
+                                <div className="flex border-b border-slate-800 bg-slate-950/80 px-4 py-3 items-center justify-between">
+                                    <div className="flex items-center gap-4">
+                                        <span className="text-indigo-400 font-bold text-sm">🕵️‍♂️ AI PROXIMITY INSPECTOR</span>
+                                        <div className="flex gap-2">
+                                            {['parser', 'mapbox', 'sql'].map(tab => (
+                                                <button
+                                                    key={tab}
+                                                    type="button"
+                                                    onClick={() => setDebugTab(tab)}
+                                                    className={`rounded-lg px-3 py-1.5 font-bold transition-all ${
+                                                        debugTab === tab
+                                                            ? 'bg-indigo-600 text-white shadow-md'
+                                                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                                                    }`}
+                                                >
+                                                    {tab === 'parser' && 'AI Parser'}
+                                                    {tab === 'mapbox' && 'Mapbox API Logs'}
+                                                    {tab === 'sql' && `SQL Queries (${debugInfo?.sql_queries?.length ?? 0})`}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowDebugger(false)}
+                                        className="text-slate-400 hover:text-slate-200 transition-all p-1"
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+
+                                {/* Debugger Content */}
+                                <div className="p-6 max-h-[400px] overflow-y-auto space-y-4">
+                                    {debugTab === 'parser' && (
+                                        <div className="space-y-3">
+                                            <div>
+                                                <p className="text-slate-400 font-bold uppercase tracking-wider text-[10px] mb-1">Active Natural Language Query</p>
+                                                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 text-slate-200">
+                                                    {prompt.trim() ? `"${prompt}"` : 'None (Manual filter search active)'}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <p className="text-slate-400 font-bold uppercase tracking-wider text-[10px] mb-1">Parsed JSON Filters (Groq Output)</p>
+                                                <pre className="bg-slate-950 p-4 rounded-xl border border-slate-800 overflow-x-auto text-emerald-400">
+                                                    {lastParsedFilters 
+                                                        ? JSON.stringify(lastParsedFilters, null, 2) 
+                                                        : '// Submit an AI prompt above to inspect the JSON schema translation.'}
+                                                </pre>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {debugTab === 'mapbox' && (
+                                        <div className="space-y-4">
+                                            <div>
+                                                <p className="text-slate-400 font-bold uppercase tracking-wider text-[10px] mb-2">Location Forward Geocoding</p>
+                                                {debugInfo?.location_geocoding ? (
+                                                    <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1">
+                                                        <p><span className="text-indigo-400">Input:</span> "{debugInfo.location_geocoding.input}"</p>
+                                                        <p><span className="text-emerald-400">Coords:</span> lat: {debugInfo.location_geocoding.output?.lat}, lng: {debugInfo.location_geocoding.output?.lng}</p>
+                                                        <p><span className="text-purple-400">Resolved Address:</span> {debugInfo.location_geocoding.output?.error ? <span className="text-red-400">Failed</span> : 'Successfully Geocoded'}</p>
+                                                    </div>
+                                                ) : (
+                                                    <p className="text-slate-500 italic">No primary location geocoding ran for this search query.</p>
+                                                )}
+                                            </div>
+
+                                            <div>
+                                                <p className="text-slate-400 font-bold uppercase tracking-wider text-[10px] mb-2">Proximity Pins & Isochrones Logs</p>
+                                                {debugInfo?.pins_geocoding && debugInfo.pins_geocoding.length > 0 ? (
+                                                    <div className="space-y-3">
+                                                        {debugInfo.pins_geocoding.map((pin, idx) => (
+                                                            <div key={idx} className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
+                                                                <div className="flex items-center justify-between border-b border-slate-850 pb-2">
+                                                                    <span className="font-bold text-slate-200">📍 Pin #{idx + 1}: "{pin.query}"</span>
+                                                                    <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${pin.type === 'commute' ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'}`}>
+                                                                        {pin.type.toUpperCase()}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-slate-300">
+                                                                    <p><span className="text-indigo-400">Query Text:</span> "{pin.query_text}"</p>
+                                                                    <p><span className="text-emerald-400">Coordinates:</span> lat: {pin.resolved_coords?.lat}, lng: {pin.resolved_coords?.lng}</p>
+                                                                    {pin.type === 'commute' && (
+                                                                        <>
+                                                                            <p><span className="text-amber-400">Mode:</span> {pin.commute_params?.mode}</p>
+                                                                            <p><span className="text-amber-400">Minutes:</span> {pin.commute_params?.minutes} mins {pin.commute_params?.minutes === 60 && <span className="text-red-400">(Capped)</span>}</p>
+                                                                            <p className="md:col-span-2"><span className="text-purple-400">Mapbox Isochrone Polygons:</span> {pin.commute_params?.polygons_found ? <span className="text-emerald-400">Found & Loaded</span> : <span className="text-red-400">Failed / Empty</span>}</p>
+                                                                        </>
+                                                                    )}
+                                                                    {pin.type === 'radius' && (
+                                                                        <p><span className="text-blue-400">Radius Limit:</span> {pin.radius_params?.radius_miles} miles</p>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <p className="text-slate-500 italic">No custom landmark or proximity pins processed in this search query.</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {debugTab === 'sql' && (
+                                        <div className="space-y-3">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <p className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Database Query Log</p>
+                                                <span className="text-slate-400 text-[10px]">
+                                                    Total Query Time: {debugInfo?.sql_queries?.reduce((a, b) => a + b.time_ms, 0).toFixed(2) ?? 0} ms
+                                                </span>
+                                            </div>
+                                            {debugInfo?.sql_queries && debugInfo.sql_queries.length > 0 ? (
+                                                <div className="space-y-3">
+                                                    {debugInfo.sql_queries.map((q, idx) => (
+                                                        <div key={idx} className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
+                                                            <div className="flex items-center justify-between text-slate-400 border-b border-slate-850 pb-2">
+                                                                <span className="font-bold text-slate-300">Query #{idx + 1}</span>
+                                                                <span className={`font-bold px-1.5 py-0.5 rounded ${q.time_ms > 10 ? 'bg-red-500/20 text-red-400' : q.time_ms > 5 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
+                                                                    {q.time_ms.toFixed(2)} ms
+                                                                </span>
+                                                            </div>
+                                                            <div className="text-slate-200 select-all overflow-x-auto whitespace-pre-wrap break-all py-1">
+                                                                {q.sql}
+                                                            </div>
+                                                            {q.bindings && q.bindings.length > 0 && (
+                                                                <div className="text-[10px] text-slate-400 bg-slate-900/50 p-2 rounded border border-slate-850">
+                                                                    <span className="text-indigo-400 font-bold">Bindings:</span> {JSON.stringify(q.bindings)}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <p className="text-slate-500 italic">No SQL queries logged for this page load.</p>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
 
                         {properties.data.length > 0 ? (
                             <>

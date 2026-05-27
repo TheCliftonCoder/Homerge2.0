@@ -75,6 +75,16 @@ class PropertyController extends Controller
      */
     public function search(Request $request): Response
     {
+        $isDebug = (bool) config('app.debug');
+        $debugLogs = [
+            'location_geocoding' => null,
+            'pins_geocoding' => [],
+            'sql_queries' => [],
+        ];
+        if ($isDebug) {
+            DB::enableQueryLog();
+        }
+
         $query = GeneralProperty::with(['agent', 'images', 'propertyCategory.transaction', 'poiCache']);
 
         $geocodingError = null;
@@ -254,6 +264,15 @@ class PropertyController extends Controller
 
                     $pinType = $pin['type'] ?? 'commute'; // Default to commute if not specified
 
+                    if ($isDebug) {
+                        $pinDebug = [
+                            'query' => $pin['query'],
+                            'query_text' => $queryText,
+                            'resolved_coords' => $coords,
+                            'type' => $pinType,
+                        ];
+                    }
+
                     if ($pinType === 'commute') {
                         $mode = $pin['mode'] ?? 'driving';
                         $mins = (int) ($pin['value'] ?? 20);
@@ -264,6 +283,14 @@ class PropertyController extends Controller
                         
                         $isoPolygons = $this->isochrone->getPolygons($coords['lat'], $coords['lng'], $mode, $mins);
                         
+                        if ($isDebug) {
+                            $pinDebug['commute_params'] = [
+                                'mode' => $mode,
+                                'minutes' => $mins,
+                                'polygons_found' => !empty($isoPolygons),
+                            ];
+                        }
+
                         if ($isoPolygons) {
                             $commutePinFilters[] = [
                                 'polygons' => $isoPolygons,
@@ -287,6 +314,13 @@ class PropertyController extends Controller
                     } else {
                         // Radius / Distance pin
                         $radius = (float) ($pin['value'] ?? 1.0);
+
+                        if ($isDebug) {
+                            $pinDebug['radius_params'] = [
+                                'radius_miles' => $radius,
+                            ];
+                        }
+
                         $radiusPinFilters[] = [
                             'lat' => $coords['lat'],
                             'lng' => $coords['lng'],
@@ -310,6 +344,10 @@ class PropertyController extends Controller
                         $lngRange = $radius / abs(cos(deg2rad($coords['lat'])) * 69.0);
                         $query->whereBetween('latitude', [$coords['lat'] - $latRange, $coords['lat'] + $latRange])
                               ->whereBetween('longitude', [$coords['lng'] - $lngRange, $coords['lng'] + $lngRange]);
+                    }
+
+                    if ($isDebug) {
+                        $debugLogs['pins_geocoding'][] = $pinDebug;
                     }
 
                     // If we have no primary location searchCoords, use the first pin as the result anchor
@@ -418,12 +456,25 @@ class PropertyController extends Controller
             }
         }
 
+        if ($isDebug) {
+            $queries = DB::getQueryLog();
+            foreach ($queries as $queryInfo) {
+                $debugLogs['sql_queries'][] = [
+                    'sql' => $queryInfo['query'],
+                    'bindings' => $queryInfo['bindings'],
+                    'time_ms' => $queryInfo['time'],
+                ];
+            }
+        }
+
         return Inertia::render('Properties/Search', [
             'properties' => $properties,
             'filters' => $request->all(),
             'geocodingError' => $geocodingError,
             'geocodingErrors' => $geocodingErrors,
             'resolvedPins' => $resolvedPins,
+            'appDebug' => $isDebug,
+            'debugInfo' => $isDebug ? $debugLogs : null,
         ]);
     }
 
