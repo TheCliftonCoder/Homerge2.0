@@ -159,13 +159,12 @@ export default function Welcome({ auth }) {
                         {/* AI Search Bar */}
                         <div className="mb-6 text-left">
                             <form onSubmit={handleSearch} className="flex items-center gap-3 bg-white rounded-2xl p-2 shadow-xl border border-gray-150 focus-within:ring-2 focus-within:ring-indigo-150 transition-all duration-300">
-                                <span className="text-xl pl-3 select-none">✨</span>
                                 <input
                                     type="text"
                                     placeholder={placeholder}
                                     value={prompt}
                                     onChange={e => setPrompt(e.target.value)}
-                                    className="flex-1 bg-transparent border-0 px-2 py-3 text-base text-gray-900 focus:outline-none focus:ring-0 placeholder-gray-400"
+                                    className="flex-1 bg-transparent border-0 pl-4 pr-2 py-3 text-base text-gray-900 focus:outline-none focus:ring-0 placeholder-gray-400"
                                 />
                                 <button
                                     type="submit"
@@ -178,10 +177,7 @@ export default function Welcome({ auth }) {
                                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
                                         </svg>
                                     ) : (
-                                        <>
-                                            <span>🔍</span>
-                                            <span>Search</span>
-                                        </>
+                                        <span>Search</span>
                                     )}
                                 </button>
                             </form>
