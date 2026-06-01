@@ -51,9 +51,9 @@ class PropertyController extends Controller
     /**
      * Display a single property with all details.
      */
-    public function show(GeneralProperty $property): Response
+    public function show(Request $request, GeneralProperty $property): Response
     {
-        $property->load(['agent', 'images', 'propertyCategory.transaction']);
+        $property->load(['agent', 'images', 'propertyCategory.transaction', 'poiCache']);
 
         // Check if the authenticated user has already enquired about this property
         $hasEnquired = false;
@@ -64,9 +64,68 @@ class PropertyController extends Controller
                 ->exists();
         }
 
+        // Parse query params and resolve pins
+        $resolvedPins = [];
+        $locationContext = $request->location ? ", " . $request->location : "";
+        $pins = [];
+
+        if ($request->filled('proximity_pins')) {
+            $rawPins = is_array($request->proximity_pins) ? $request->proximity_pins : json_decode($request->proximity_pins, true);
+            if (is_array($rawPins)) {
+                $pins = $this->normalizeProximityFilters($rawPins);
+                foreach ($pins as $pin) {
+                    if (empty($pin['query'])) continue;
+                    $queryText = $pin['query'] . $locationContext;
+                    $coords = $this->geocoder->geocodeAddress($queryText);
+                    if ($coords) {
+                        $pinType = $pin['type'] ?? 'commute';
+                        if ($pinType === 'commute') {
+                            $resolvedPins[] = [
+                                'type' => 'commute',
+                                'label' => $pin['label'] ?? null,
+                                'query' => $pin['query'],
+                                'resolved_name' => $coords['resolved_name'],
+                                'lat' => $coords['lat'],
+                                'lng' => $coords['lng'],
+                                'mode' => $pin['mode'] ?? 'driving',
+                                'minutes' => (int) (!empty($pin['value']) ? $pin['value'] : 20),
+                                'display' => isset($pin['display']) ? filter_var($pin['display'], FILTER_VALIDATE_BOOLEAN) : false,
+                                'pin_mode' => $pin['pin_mode'] ?? 'filter'
+                            ];
+                        } else {
+                            $resolvedPins[] = [
+                                'type' => 'radius',
+                                'label' => $pin['label'] ?? null,
+                                'query' => $pin['query'],
+                                'resolved_name' => $coords['resolved_name'],
+                                'lat' => $coords['lat'],
+                                'lng' => $coords['lng'],
+                                'max_miles' => (float) (!empty($pin['value']) ? $pin['value'] : 1.0),
+                                'display' => isset($pin['display']) ? filter_var($pin['display'], FILTER_VALIDATE_BOOLEAN) : false,
+                                'pin_mode' => $pin['pin_mode'] ?? 'filter'
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+
+        $poiProximity = [];
+        if ($request->filled('poi_proximity')) {
+            $poiFilters = is_array($request->poi_proximity) ? $request->poi_proximity : json_decode($request->poi_proximity, true);
+            if (is_array($poiFilters)) {
+                $poiProximity = $this->normalizeProximityFilters($poiFilters);
+            }
+        }
+
         return Inertia::render('Properties/Show', [
             'property' => $property,
             'hasEnquired' => $hasEnquired,
+            'filters' => [
+                'poi_proximity' => $poiProximity,
+                'proximity_pins' => $pins,
+            ],
+            'resolvedPins' => $resolvedPins,
         ]);
     }
 
@@ -76,6 +135,7 @@ class PropertyController extends Controller
     public function search(Request $request): Response
     {
         $isDebug = (bool) config('app.debug');
+        $normalizedFilters = $request->all();
         $debugLogs = [
             'location_geocoding' => null,
             'pins_geocoding' => [],
@@ -228,12 +288,17 @@ class PropertyController extends Controller
             $poiFilters = is_array($request->poi_proximity) ? $request->poi_proximity : json_decode($request->poi_proximity, true);
             if (is_array($poiFilters)) {
                 $poiFilters = $this->normalizeProximityFilters($poiFilters);
+                $normalizedFilters['poi_proximity'] = $poiFilters;
                 foreach ($poiFilters as $pf) {
                     if (isset($pf['poi_type']) && isset($pf['max_miles'])) {
-                        $query->whereHas('poiCache', function($q) use ($pf) {
-                            $q->where('poi_type', $pf['poi_type'])
-                              ->where('distance_miles', '<=', (float) $pf['max_miles']);
-                        });
+                        $isFilter = !isset($pf['pin_mode']) || $pf['pin_mode'] === 'filter';
+                        if ($isFilter) {
+                            $query->whereHas('poiCache', function($q) use ($pf) {
+                                $maxMiles = (float) (!empty($pf['max_miles']) ? $pf['max_miles'] : 1.0);
+                                $q->where('poi_type', $pf['poi_type'])
+                                  ->where('distance_miles', '<=', $maxMiles);
+                            });
+                        }
                     }
                 }
             }
@@ -250,6 +315,7 @@ class PropertyController extends Controller
             $pins = is_array($request->proximity_pins) ? $request->proximity_pins : json_decode($request->proximity_pins, true);
             if (is_array($pins)) {
                 $pins = $this->normalizeProximityFilters($pins);
+                $normalizedFilters['proximity_pins'] = $pins;
                 foreach ($pins as $pin) {
                     if (empty($pin['query'])) continue;
 
@@ -263,6 +329,7 @@ class PropertyController extends Controller
                     }
 
                     $pinType = $pin['type'] ?? 'commute'; // Default to commute if not specified
+                    $isFilter = !isset($pin['pin_mode']) || $pin['pin_mode'] === 'filter';
 
                     if ($isDebug) {
                         $pinDebug = [
@@ -275,7 +342,7 @@ class PropertyController extends Controller
 
                     if ($pinType === 'commute') {
                         $mode = $pin['mode'] ?? 'driving';
-                        $mins = (int) ($pin['value'] ?? 20);
+                        $mins = (int) (!empty($pin['value']) ? $pin['value'] : 20);
                         if ($mins > 60) {
                             $geocodingErrors[] = "Commute time for '{$pin['query']}' cannot exceed 60 minutes. It has been automatically capped at 60 minutes.";
                             $mins = 60;
@@ -292,13 +359,15 @@ class PropertyController extends Controller
                         }
 
                         if ($isoPolygons) {
-                            $commutePinFilters[] = [
-                                'polygons' => $isoPolygons,
-                                'mode' => $mode,
-                                'minutes' => $mins,
-                                'label' => $pin['label'] ?? null,
-                                'query' => $pin['query']
-                            ];
+                            if ($isFilter) {
+                                $commutePinFilters[] = [
+                                    'polygons' => $isoPolygons,
+                                    'mode' => $mode,
+                                    'minutes' => $mins,
+                                    'label' => $pin['label'] ?? null,
+                                    'query' => $pin['query']
+                                ];
+                            }
 
                             $resolvedPins[] = [
                                 'type' => 'commute',
@@ -308,12 +377,14 @@ class PropertyController extends Controller
                                 'lat' => $coords['lat'],
                                 'lng' => $coords['lng'],
                                 'mode' => $mode,
-                                'minutes' => $mins
+                                'minutes' => $mins,
+                                'display' => isset($pin['display']) ? filter_var($pin['display'], FILTER_VALIDATE_BOOLEAN) : false,
+                                'pin_mode' => $pin['pin_mode'] ?? 'filter'
                             ];
                         }
                     } else {
                         // Radius / Distance pin
-                        $radius = (float) ($pin['value'] ?? 1.0);
+                        $radius = (float) (!empty($pin['value']) ? $pin['value'] : 1.0);
 
                         if ($isDebug) {
                             $pinDebug['radius_params'] = [
@@ -321,13 +392,15 @@ class PropertyController extends Controller
                             ];
                         }
 
-                        $radiusPinFilters[] = [
-                            'lat' => $coords['lat'],
-                            'lng' => $coords['lng'],
-                            'radius' => $radius,
-                            'label' => $pin['label'] ?? null,
-                            'query' => $pin['query']
-                        ];
+                        if ($isFilter) {
+                            $radiusPinFilters[] = [
+                                'lat' => $coords['lat'],
+                                'lng' => $coords['lng'],
+                                'radius' => $radius,
+                                'label' => $pin['label'] ?? null,
+                                'query' => $pin['query']
+                            ];
+                        }
 
                         $resolvedPins[] = [
                             'type' => 'radius',
@@ -336,14 +409,18 @@ class PropertyController extends Controller
                             'resolved_name' => $coords['resolved_name'],
                             'lat' => $coords['lat'],
                             'lng' => $coords['lng'],
-                            'max_miles' => $radius
+                            'max_miles' => $radius,
+                            'display' => isset($pin['display']) ? filter_var($pin['display'], FILTER_VALIDATE_BOOLEAN) : false,
+                            'pin_mode' => $pin['pin_mode'] ?? 'filter'
                         ];
 
-                        // Apply a SQL bounding box pre-filter for performance
-                        $latRange = $radius / 69.0;
-                        $lngRange = $radius / abs(cos(deg2rad($coords['lat'])) * 69.0);
-                        $query->whereBetween('latitude', [$coords['lat'] - $latRange, $coords['lat'] + $latRange])
-                              ->whereBetween('longitude', [$coords['lng'] - $lngRange, $coords['lng'] + $lngRange]);
+                        if ($isFilter) {
+                            // Apply a SQL bounding box pre-filter for performance
+                            $latRange = $radius / 69.0;
+                            $lngRange = $radius / abs(cos(deg2rad($coords['lat'])) * 69.0);
+                            $query->whereBetween('latitude', [$coords['lat'] - $latRange, $coords['lat'] + $latRange])
+                                  ->whereBetween('longitude', [$coords['lng'] - $lngRange, $coords['lng'] + $lngRange]);
+                        }
                     }
 
                     if ($isDebug) {
@@ -469,7 +546,7 @@ class PropertyController extends Controller
 
         return Inertia::render('Properties/Search', [
             'properties' => $properties,
-            'filters' => $request->all(),
+            'filters' => $normalizedFilters,
             'geocodingError' => $geocodingError,
             'geocodingErrors' => $geocodingErrors,
             'resolvedPins' => $resolvedPins,

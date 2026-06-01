@@ -3,7 +3,7 @@ import { Head, router, useForm, Link } from '@inertiajs/react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import PublicLayout from '@/Layouts/PublicLayout';
 
-export default function Show({ auth, property, hasEnquired = false }) {
+export default function Show({ auth, property, hasEnquired = false, filters = {}, resolvedPins = [] }) {
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
     const [showEnquiryForm, setShowEnquiryForm] = useState(false);
 
@@ -75,15 +75,16 @@ export default function Show({ auth, property, hasEnquired = false }) {
             <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 py-12">
                 <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
                     {/* Back Button */}
-                    <a
-                        href="/properties"
+                    <button
+                        type="button"
+                        onClick={() => window.history.back()}
                         className="mb-6 inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition-all hover:bg-gray-50 hover:shadow-md"
                     >
                         <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                         </svg>
-                        Back to Properties
-                    </a>
+                        Back
+                    </button>
 
                     {/* Property Header */}
                     <div className="mb-8 overflow-hidden rounded-2xl bg-white shadow-xl">
@@ -195,6 +196,78 @@ export default function Show({ auth, property, hasEnquired = false }) {
                             ) : (
                                 <RentalDetails transaction={transaction} />
                             )}
+
+                            {/* Active Pins Proximity */}
+                            {(() => {
+                                const parseBool = (val) => {
+                                    if (val === undefined || val === null) return false;
+                                    if (typeof val === 'boolean') return val;
+                                    const str = String(val).toLowerCase().trim();
+                                    return str === 'true' || str === '1';
+                                };
+
+                                const getPoiIcon = (type) => {
+                                    if (!type) return '📍';
+                                    const icons = {
+                                        train_station: '🚂',
+                                        school: '🎓',
+                                        hospital: '🏥',
+                                        supermarket: '🛒',
+                                        gym: '💪',
+                                        park: '🌳'
+                                    };
+                                    return icons[type] || '📍';
+                                };
+
+                                const getPoiLabel = (type) => {
+                                    if (!type) return '';
+                                    const labels = {
+                                        train_station: 'Train Station',
+                                        school: 'School',
+                                        hospital: 'Hospital',
+                                        supermarket: 'Supermarket',
+                                        gym: 'Gym',
+                                        park: 'Park'
+                                    };
+                                    return labels[type] || String(type).replace('_', ' ');
+                                };
+
+                                const poiProximity = filters?.poi_proximity || [];
+                                const proximityPins = filters?.proximity_pins || [];
+
+                                const activePins = [
+                                    ...poiProximity
+                                        .filter(poi => poi && poi.poi_type)
+                                        .map(poi => ({
+                                            type: 'suggested',
+                                            poi_type: poi.poi_type,
+                                            label: poi.label || getPoiLabel(poi.poi_type),
+                                            icon: getPoiIcon(poi.poi_type),
+                                            pinMode: poi.pin_mode || 'filter'
+                                        })),
+                                    ...proximityPins
+                                        .filter(pin => pin && pin.query)
+                                        .map((pin, idx) => {
+                                            const resolved = resolvedPins?.find(rp => rp.query === pin.query && rp.label === pin.label);
+                                            return {
+                                                type: 'custom',
+                                                index: idx,
+                                                customPin: pin,
+                                                label: pin.label || pin.query,
+                                                icon: pin.type === 'commute' ? (pin.mode === 'driving' ? '🚗' : pin.mode === 'cycling' ? '🚲' : '🚶') : '📍',
+                                                pinMode: pin.pin_mode || 'filter',
+                                                resolved: resolved
+                                            };
+                                        })
+                                ];
+
+                                return activePins.length > 0 ? (
+                                    <ActivePinsProximity activePins={activePins} property={property} />
+                                ) : null;
+                            })()}
+
+                            {/* Nearby Amenities */}
+                            <LocalAmenities amenities={property.poi_cache} />
                         </div>
 
                         {/* Right Column - Quick Info & Agent */}
@@ -439,6 +512,58 @@ function DetailItem({ icon, label, value }) {
     );
 }
 
+// Local Amenities Component
+function LocalAmenities({ amenities }) {
+    const getPoiIcon = (type) => {
+        const icons = {
+            train_station: '🚂',
+            school: '🎓',
+            hospital: '🏥',
+            supermarket: '🛒',
+            gym: '💪',
+            park: '🌳'
+        };
+        return icons[type] || '📍';
+    };
+
+    const getTravelTimeStr = (miles) => {
+        const mins = Math.round(miles * 20); // 3mph walking
+        return `~${mins} min walk`;
+    };
+
+    if (!amenities || amenities.length === 0) {
+        return null;
+    }
+
+    return (
+        <div className="mt-8 rounded-2xl bg-white p-8 shadow-xl">
+            <h2 className="mb-6 text-2xl font-bold text-gray-900 flex items-center gap-2">
+                <span>📍</span> Nearby Amenities
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {amenities.map((poi, idx) => (
+                    <div key={idx} className="flex items-start gap-4 rounded-xl bg-gray-50 p-4 hover:shadow-md transition-all duration-200">
+                        <span className="text-3xl p-2 bg-white rounded-xl shadow-sm">{getPoiIcon(poi.poi_type)}</span>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-xs font-bold text-indigo-600 uppercase tracking-wider">
+                                {poi.poi_type.replace('_', ' ')}
+                            </p>
+                            <p className="mt-1 font-semibold text-gray-900 truncate" title={poi.name}>
+                                {poi.name}
+                            </p>
+                            <div className="mt-2 flex items-center gap-2 text-xs text-gray-500 font-medium">
+                                <span>{Number(poi.distance_miles).toFixed(1)} miles</span>
+                                <span>•</span>
+                                <span>{getTravelTimeStr(poi.distance_miles)}</span>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 // Formatting Helper Functions
 function formatPropertyType(type) {
     const types = {
@@ -497,4 +622,96 @@ function formatFurnished(furnished) {
         furnished: 'Furnished',
     };
     return types[furnished] || furnished;
+}
+
+function ActivePinsProximity({ activePins, property }) {
+    const calculateDistance = (lat1, lon1, lat2, lon2) => {
+        const R = 3959; // Miles
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+    };
+
+    const getTravelTimeStr = (miles, mode = 'walking') => {
+        if (mode === 'walking') {
+            const mins = Math.round(miles * 20);
+            return `~${mins} min walk`;
+        }
+        if (mode === 'driving') {
+            const mins = Math.round(miles * 3);
+            return `~${mins} min drive`;
+        }
+        if (mode === 'cycling') {
+            const mins = Math.round(miles * 6);
+            return `~${mins} min cycle`;
+        }
+        return '';
+    };
+
+    return (
+        <div className="mt-8 rounded-2xl bg-white p-8 shadow-xl border border-indigo-100 animate-in fade-in duration-300">
+            <h2 className="mb-6 text-2xl font-bold text-gray-900">
+                My Pins
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {activePins.map((pin, idx) => {
+                    let valueText = '';
+                    let detailsText = '';
+                    if (pin.type === 'suggested') {
+                        const poi = property.poi_cache?.find(p => p.poi_type === pin.poi_type);
+                        if (poi) {
+                            const dist = Number(poi.distance_miles).toFixed(1);
+                            valueText = `${dist} miles`;
+                            detailsText = getTravelTimeStr(poi.distance_miles, 'walking');
+                        } else {
+                            valueText = 'Not nearby';
+                            detailsText = 'Outside typical range';
+                        }
+                    } else if (pin.type === 'custom') {
+                        if (pin.resolved) {
+                            const dist = calculateDistance(property.latitude, property.longitude, pin.resolved.lat, pin.resolved.lng);
+                            if (pin.customPin.type === 'commute') {
+                                valueText = `${Number(dist).toFixed(1)} miles`;
+                                detailsText = getTravelTimeStr(dist, pin.customPin.mode || 'driving');
+                            } else {
+                                valueText = `${Number(dist).toFixed(1)} miles`;
+                                detailsText = 'Direct distance';
+                            }
+                        } else {
+                            valueText = 'Resolving...';
+                        }
+                    }
+                    return (
+                        <div key={idx} className="flex items-start gap-4 rounded-xl bg-gray-50 p-4 hover:shadow-md transition-all duration-200">
+                            <span className="text-3xl p-2 bg-white rounded-xl shadow-sm">{pin.icon}</span>
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider">
+                                        {pin.label}
+                                    </span>
+                                    <span className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider border ${
+                                        pin.pinMode === 'filter'
+                                            ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                                            : 'bg-slate-100 border-slate-200 text-slate-600'
+                                    }`}>
+                                        {pin.pinMode === 'filter' ? 'Filter' : 'Display Only'}
+                                    </span>
+                                </div>
+                                <p className="mt-1.5 font-bold text-lg text-gray-900 leading-tight">
+                                    {valueText}
+                                </p>
+                                <p className="mt-0.5 text-xs text-gray-500 font-medium">
+                                    {detailsText}
+                                </p>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
+    );
 }

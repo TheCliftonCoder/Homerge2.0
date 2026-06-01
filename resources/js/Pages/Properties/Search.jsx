@@ -1,10 +1,87 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import PublicLayout from '@/Layouts/PublicLayout';
 import PropertyCard from '@/Components/PropertyCard';
 
-export default function Search({ auth, properties, filters, geocodingError, geocodingErrors = [], resolvedPins = [], isochroneResolved = null, appDebug = false, debugInfo = null }) {
+const parseBool = (val) => {
+    if (val === undefined || val === null) return false;
+    if (typeof val === 'boolean') return val;
+    const str = String(val).toLowerCase().trim();
+    return str === 'true' || str === '1';
+};
+
+const assignDisplayFlags = (poiProximity = [], proximityPins = []) => {
+    let displayCount = 0;
+    
+    const shouldDisplay = (p) => {
+        if (p.display !== undefined && p.display !== null) {
+            return parseBool(p.display);
+        }
+        return p.pin_mode === 'display';
+    };
+
+    // First pass: assign display status to pins that explicitly want display
+    const parsedPoi = (poiProximity || []).map(p => {
+        const wantsDisplay = shouldDisplay(p);
+        let displayVal = null;
+        if (wantsDisplay) {
+            if (displayCount < 3) {
+                displayVal = true;
+                displayCount++;
+            } else {
+                displayVal = false;
+            }
+        }
+        return { ...p, display: displayVal, pin_mode: p.pin_mode || 'filter' };
+    });
+    
+    const parsedPins = (proximityPins || []).map(p => {
+        const wantsDisplay = shouldDisplay(p);
+        let displayVal = null;
+        if (wantsDisplay) {
+            if (displayCount < 3) {
+                displayVal = true;
+                displayCount++;
+            } else {
+                displayVal = false;
+            }
+        }
+        return { ...p, display: displayVal, pin_mode: p.pin_mode || 'filter' };
+    });
+    
+    // Second pass: fill remaining up to 3 slots with other pins (which had displayVal = null)
+    const finalPoi = parsedPoi.map(p => {
+        if (p.display === null) {
+            if (displayCount < 3) {
+                displayCount++;
+                return { ...p, display: true };
+            } else {
+                return { ...p, display: false };
+            }
+        }
+        return p;
+    });
+    
+    const finalPins = parsedPins.map(p => {
+        if (p.display === null) {
+            if (displayCount < 3) {
+                displayCount++;
+                return { ...p, display: true };
+            } else {
+                return { ...p, display: false };
+            }
+        }
+        return p;
+    });
+    
+    return {
+        poi_proximity: finalPoi,
+        proximity_pins: finalPins
+    };
+};
+
+export default function Search({ auth, properties, filters = {}, geocodingError, geocodingErrors = [], resolvedPins = [], isochroneResolved = null, appDebug = false, debugInfo = null }) {
     const [isFiltersCollapsed, setIsFiltersCollapsed] = useState(properties.total > 0);
     const [pinFormMode, setPinFormMode] = useState('commute'); // 'commute' or 'radius'
     const [pinQuery, setPinQuery] = useState('');
@@ -18,6 +95,7 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
     const [showDebugger, setShowDebugger] = useState(false);
     const [lastParsedFilters, setLastParsedFilters] = useState(null);
     const [debugTab, setDebugTab] = useState('parser');
+    const [isDragInvalid, setIsDragInvalid] = useState(false);
 
     const [formData, setFormData] = useState({
         location: filters.location || '',
@@ -37,8 +115,13 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
         furnished: filters.furnished || '',
         pets_allowed: filters.pets_allowed || '',
         available_from: filters.available_from || '',
-        poi_proximity: filters.poi_proximity || [],
-        proximity_pins: filters.proximity_pins || [],
+        ...(() => {
+            const normalized = assignDisplayFlags(filters.poi_proximity || [], filters.proximity_pins || []);
+            return {
+                poi_proximity: normalized.poi_proximity,
+                proximity_pins: normalized.proximity_pins
+            };
+        })()
     });
 
     const handleChange = (e) => {
@@ -91,6 +174,162 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
 
     const Layout = auth?.user ? AuthenticatedLayout : PublicLayout;
 
+    const getPoiIcon = (type) => {
+        if (!type) return '📍';
+        const icons = {
+            train_station: '🚂',
+            school: '🎓',
+            hospital: '🏥',
+            supermarket: '🛒',
+            gym: '💪',
+            park: '🌳'
+        };
+        return icons[type] || '📍';
+    };
+
+    const getPoiLabel = (type) => {
+        if (!type) return '';
+        const labels = {
+            train_station: 'Train Station',
+            school: 'School',
+            hospital: 'Hospital',
+            supermarket: 'Supermarket',
+            gym: 'Gym',
+            park: 'Park'
+        };
+        return labels[type] || String(type).replace('_', ' ');
+    };
+
+
+
+    // Derived active pins list (from formData.poi_proximity and formData.proximity_pins)
+    const allActivePins = [
+        ...(formData.poi_proximity || [])
+            .filter(poi => poi && poi.poi_type)
+            .map(poi => ({
+                id: `suggested-${poi.poi_type}`,
+                type: 'suggested',
+                poi_type: poi.poi_type,
+                label: poi.label || getPoiLabel(poi.poi_type),
+                icon: getPoiIcon(poi.poi_type),
+                display: parseBool(poi.display),
+                pin_mode: poi.pin_mode || 'filter',
+                max_miles: poi.max_miles
+            })),
+        ...(formData.proximity_pins || [])
+            .filter(pin => pin && pin.query)
+            .map((pin, idx) => {
+                const resolved = resolvedPins?.find(rp => rp.query === pin.query && rp.label === pin.label);
+                return {
+                    id: `custom-${idx}`,
+                    type: 'custom',
+                    index: idx,
+                    customPin: pin,
+                    label: pin.label || pin.query,
+                    icon: pin.type === 'commute' ? (pin.mode === 'driving' ? '🚗' : pin.mode === 'cycling' ? '🚲' : '🚶') : '📍',
+                    display: parseBool(pin.display),
+                    pin_mode: pin.pin_mode || 'filter',
+                    resolved: resolved
+                };
+            })
+    ];
+
+    const displayPins = allActivePins.filter(p => p.display);
+    const otherPins = allActivePins.filter(p => !p.display);
+
+    // Drag and Drop handlers
+    const handleDragStart = (e, pinId) => {
+        e.dataTransfer.setData('text/plain', pinId);
+    };
+
+    const handleDragOver = (e) => {
+        e.preventDefault();
+    };
+
+    const updatePinDisplay = (pin, displayValue) => {
+        setFormData(prev => {
+            if (pin.type === 'suggested') {
+                return {
+                    ...prev,
+                    poi_proximity: prev.poi_proximity.map(p => 
+                        p.poi_type === pin.poi_type ? { ...p, display: displayValue } : p
+                    )
+                };
+            } else {
+                return {
+                    ...prev,
+                    proximity_pins: prev.proximity_pins.map((p, i) => 
+                        i === pin.index ? { ...p, display: displayValue } : p
+                    )
+                };
+            }
+        });
+    };
+
+    const togglePinMode = (pin) => {
+        setFormData(prev => {
+            const nextMode = pin.pin_mode === 'filter' ? 'display' : 'filter';
+            if (pin.type === 'suggested') {
+                return {
+                    ...prev,
+                    poi_proximity: prev.poi_proximity.map(p => 
+                        p.poi_type === pin.poi_type ? { ...p, pin_mode: nextMode } : p
+                    )
+                };
+            } else {
+                return {
+                    ...prev,
+                    proximity_pins: prev.proximity_pins.map((p, i) => 
+                        i === pin.index ? { ...p, pin_mode: nextMode } : p
+                    )
+                };
+            }
+        });
+    };
+
+    const handleDragEnterDisplay = (e) => {
+        e.preventDefault();
+        if (displayPins.length >= 3) {
+            setIsDragInvalid(true);
+        }
+    };
+
+    const handleDragLeaveDisplay = (e) => {
+        e.preventDefault();
+        setIsDragInvalid(false);
+    };
+
+    const handleDropToDisplay = (e) => {
+        e.preventDefault();
+        setIsDragInvalid(false);
+        const pinId = e.dataTransfer.getData('text/plain');
+        if (!pinId) return;
+
+        const pin = allActivePins.find(p => p.id === pinId);
+        if (!pin || pin.display) return;
+
+        if (displayPins.length >= 3) {
+            setIsDragInvalid(true);
+            setTimeout(() => setIsDragInvalid(false), 1600);
+            return;
+        }
+
+        updatePinDisplay(pin, true);
+    };
+
+    const handleDropToAll = (e) => {
+        e.preventDefault();
+        const pinId = e.dataTransfer.getData('text/plain');
+        if (!pinId) return;
+
+        const pin = allActivePins.find(p => p.id === pinId);
+        if (!pin || !pin.display) return;
+
+        updatePinDisplay(pin, false);
+    };
+
+    // renderDraggablePin has been refactored into the standalone DraggablePinItem component at the bottom of this file.
+
     const activeFilterCount = Object.entries(formData).filter(([key, v]) => {
         if (Array.isArray(v)) return v.length > 0;
         return v !== '' && v !== null && v !== undefined;
@@ -130,8 +369,38 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                 ...(f.garden !== null && f.garden !== undefined ? { garden: f.garden } : {}),
                 ...(f.furnished !== null && f.furnished !== undefined ? { furnished: f.furnished } : {}),
                 ...(f.pets_allowed !== null && f.pets_allowed !== undefined ? { pets_allowed: f.pets_allowed } : {}),
-                ...(f.poi_proximity ? { poi_proximity: f.poi_proximity } : {}),
-                ...(f.proximity_pins ? { proximity_pins: f.proximity_pins } : {}),
+                ...(() => {
+                    let nextPoi = [...(formData.poi_proximity || [])];
+                    if (f.poi_proximity && f.poi_proximity.length > 0) {
+                        f.poi_proximity.forEach(newPoi => {
+                            const idx = nextPoi.findIndex(p => p.poi_type === newPoi.poi_type);
+                            if (idx !== -1) {
+                                nextPoi[idx] = { ...nextPoi[idx], ...newPoi };
+                            } else {
+                                nextPoi.push(newPoi);
+                            }
+                        });
+                    }
+
+                    let nextPins = [...(formData.proximity_pins || [])];
+                    if (f.proximity_pins && f.proximity_pins.length > 0) {
+                        f.proximity_pins.forEach(newPin => {
+                            const newQueryClean = String(newPin.query || '').trim().toLowerCase();
+                            const idx = nextPins.findIndex(p => String(p.query || '').trim().toLowerCase() === newQueryClean);
+                            if (idx !== -1) {
+                                nextPins[idx] = { ...nextPins[idx], ...newPin };
+                            } else {
+                                nextPins.push(newPin);
+                            }
+                        });
+                    }
+
+                    const normalized = assignDisplayFlags(nextPoi, nextPins);
+                    return {
+                        poi_proximity: normalized.poi_proximity,
+                        proximity_pins: normalized.proximity_pins
+                    };
+                })()
             };
             setFormData(merged);
             const cleanFilters = Object.fromEntries(
@@ -160,10 +429,9 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
 
                     {/* AI Prompt Panel */}
                     <div className="mb-6 rounded-2xl bg-gradient-to-r from-indigo-50 to-violet-50 border border-indigo-100 shadow-lg p-6">
-                        <div className="flex items-center gap-2 mb-3">
-                            <span className="text-lg">✨</span>
+                        <div className="mb-3">
                             <p className="text-sm font-semibold text-indigo-700 uppercase tracking-widest">
-                                {activeFilterCount > 0 ? 'Update search by AI prompt' : 'Search by AI prompt'}
+                                UPDATE SEARCH
                             </p>
                         </div>
                         <div className="flex gap-3">
@@ -223,13 +491,14 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                                 (formData.min_price || formData.max_price) && (
                                                     <span key="price" className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase">£{formData.min_price || 0} - {formData.max_price ? '£' + formData.max_price : 'Any'}</span>
                                                 ),
-                                                formData.poi_proximity?.map((poi, idx) => (
-                                                    <span key={`poi-${idx}`} className="bg-amber-50 text-amber-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase">Near {poi.poi_type.replace('_', ' ')} ({poi.max_miles}mi)</span>
+                                                formData.poi_proximity?.filter(poi => poi && poi.poi_type).map((poi, idx) => (
+                                                    <span key={`poi-${idx}`} className="bg-amber-50 text-amber-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase">
+                                                        Near {getPoiLabel(poi.poi_type)} {poi.pin_mode === 'display' ? '(Display Only)' : `(${poi.max_miles}mi)`}
+                                                    </span>
                                                 )),
-                                                resolvedPins?.map((pin, idx) => (
+                                                resolvedPins?.filter(pin => pin && (pin.label || pin.query)).map((pin, idx) => (
                                                     <span key={`pin-${idx}`} className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase">
-                                                        📍 {pin.label || pin.query} 
-                                                        ({pin.type === 'commute' ? `${pin.minutes}m ${pin.mode}` : `${pin.max_miles}mi`})
+                                                        📍 {pin.label || pin.query} {pin.pin_mode === 'display' ? '(Display Only)' : `(${pin.type === 'commute' ? `${pin.minutes}m ${pin.mode}` : `${pin.max_miles}mi`})`}
                                                     </span>
                                                 ))
                                             ].flat().filter(Boolean)}
@@ -241,7 +510,7 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                         onClick={() => setIsFiltersCollapsed(false)}
                                         className="rounded-xl border-2 border-indigo-200 bg-white px-5 py-2.5 text-sm font-bold text-indigo-700 transition-all hover:bg-indigo-50 hover:border-indigo-300 active:scale-95 shadow-sm"
                                     >
-                                        Manually Modify Search
+                                        Pins
                                     </button>
                                     <button
                                         onClick={handleClear}
@@ -267,13 +536,13 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                 </button>
                                 <div className="mb-6 flex items-center justify-between pr-10">
                                     <h1 className="text-3xl font-bold text-gray-900">
-                                        {activeFilterCount > 0 ? 'Update Search' : 'Search Properties'}
+                                        {activeFilterCount > 0 ? 'Update Pins' : 'Proximity Pins'}
                                     </h1>
-                                    {activeFilterCount > 0 && (
+                                    {/* {activeFilterCount > 0 && (
                                         <span className="rounded-full bg-indigo-100 px-4 py-2 text-sm font-semibold text-indigo-700">
                                             {activeFilterCount} {activeFilterCount === 1 ? 'filter' : 'filters'} active
                                         </span>
-                                    )}
+                                    )} */}
                                 </div>
 
                             {/* Search Form */}
@@ -308,8 +577,8 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                 </div>
                             )}
 
+                            {/* Temporarily disabled manually modify search property filters
                             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-                                {/* Location */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">Location</label>
                                     <input
@@ -322,7 +591,6 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                     />
                                 </div>
 
-                                {/* Radius */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">Search Radius</label>
                                     <select
@@ -344,7 +612,6 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                     </select>
                                 </div>
 
-                                {/* Min Price */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">Min Price (£)</label>
                                     <input
@@ -357,7 +624,6 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                     />
                                 </div>
 
-                                {/* Max Price */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">Max Price (£)</label>
                                     <input
@@ -370,7 +636,6 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                     />
                                 </div>
 
-                                {/* Property Category */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">Category</label>
                                     <select
@@ -385,7 +650,6 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                     </select>
                                 </div>
 
-                                {/* Transaction Type */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">Transaction Type</label>
                                     <select
@@ -400,7 +664,6 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                     </select>
                                 </div>
 
-                                {/* Bedrooms */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">Min Bedrooms</label>
                                     <select
@@ -418,7 +681,6 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                     </select>
                                 </div>
 
-                                {/* Property Type */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700">Property Type</label>
                                     <select
@@ -445,8 +707,9 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                     </select>
                                 </div>
                             </div>
+                            */}
 
-                            {/* Advanced Filters Toggle */}
+                            {/* Temporarily disabled advanced filters
                             <div className="mt-6">
                                 <button
                                     type="button"
@@ -465,10 +728,8 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                 </button>
                             </div>
 
-                            {/* Advanced Filters */}
                             {showAdvanced && (
                                 <div className="mt-6 grid grid-cols-1 gap-4 border-t border-gray-200 pt-6 md:grid-cols-2 lg:grid-cols-4">
-                                    {/* Min Size */}
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700">Min Size (sqft)</label>
                                         <input
@@ -481,7 +742,6 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                         />
                                     </div>
 
-                                    {/* Max Size */}
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700">Max Size (sqft)</label>
                                         <input
@@ -494,7 +754,6 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                         />
                                     </div>
 
-                                    {/* Bathrooms */}
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700">Min Bathrooms</label>
                                         <select
@@ -510,7 +769,6 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                         </select>
                                     </div>
 
-                                    {/* Parking */}
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700">Parking</label>
                                         <select
@@ -526,7 +784,6 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                         </select>
                                     </div>
 
-                                    {/* Garden */}
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700">Garden</label>
                                         <select
@@ -541,7 +798,6 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                         </select>
                                     </div>
 
-                                    {/* Tenure (Sales) */}
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700">Tenure</label>
                                         <select
@@ -557,7 +813,6 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                         </select>
                                     </div>
 
-                                    {/* Furnished (Rentals) */}
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700">Furnished</label>
                                         <select
@@ -573,7 +828,6 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                         </select>
                                     </div>
 
-                                    {/* Pets Allowed (Rentals) */}
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700">Pets Allowed</label>
                                         <select
@@ -589,16 +843,10 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                     </div>
                                 </div>
                             )}
+                            */}
 
                             {/* Proximity & Travel Time Section */}
-                            <div className="mt-8 border-t border-gray-200 pt-8">
-                                <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
-                                    <svg className="h-5 w-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                                    </svg>
-                                    Proximity & Travel Time
-                                </h3>
+                            <div className="mt-4">
 
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                     {/* Left Column: User Added Pins */}
@@ -614,7 +862,7 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                                         type="text"
                                                         value={pinQuery}
                                                         onChange={e => setPinQuery(e.target.value)}
-                                                        placeholder="e.g. Waterloo Station, My Office"
+                                                        placeholder="e.g. Waterloo Station, RG2 0FL"
                                                         className="w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 text-sm px-4"
                                                     />
                                                 </div>
@@ -693,16 +941,23 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                                             if (pinFormMode === 'commute' && val > 60) {
                                                                 val = 60;
                                                             }
-                                                            setFormData(prev => ({
-                                                                ...prev,
-                                                                proximity_pins: [...prev.proximity_pins, { 
-                                                                    type: pinFormMode, 
-                                                                    query: pinQuery.trim(), 
-                                                                    label: pinLabel.trim() || null,
-                                                                    value: val,
-                                                                    mode: pinFormMode === 'commute' ? pinMode : null 
-                                                                }]
-                                                            }));
+                                                            setFormData(prev => {
+                                                                const currentDisplayCount = (prev.proximity_pins || []).filter(p => p.display).length + 
+                                                                                            (prev.poi_proximity || []).filter(p => p.display).length;
+                                                                const shouldDisplay = currentDisplayCount < 3;
+                                                                return {
+                                                                    ...prev,
+                                                                    proximity_pins: [...prev.proximity_pins, { 
+                                                                        type: pinFormMode, 
+                                                                        query: pinQuery.trim(), 
+                                                                        label: pinLabel.trim() || null,
+                                                                        value: val,
+                                                                        mode: pinFormMode === 'commute' ? pinMode : null,
+                                                                        display: shouldDisplay,
+                                                                        pin_mode: 'filter'
+                                                                    }]
+                                                                };
+                                                            });
                                                             setPinQuery('');
                                                             setPinLabel('');
                                                             setPinValue(pinFormMode === 'commute' ? '20' : '1');
@@ -743,10 +998,15 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                                                     poi_proximity: prev.poi_proximity.filter(p => p.poi_type !== poi.id)
                                                                 }));
                                                             } else {
-                                                                setFormData(prev => ({
-                                                                    ...prev,
-                                                                    poi_proximity: [...prev.poi_proximity, { poi_type: poi.id, max_miles: 1.0 }]
-                                                                }));
+                                                                setFormData(prev => {
+                                                                    const currentDisplayCount = (prev.proximity_pins || []).filter(p => p.display).length + 
+                                                                                                (prev.poi_proximity || []).filter(p => p.display).length;
+                                                                    const shouldDisplay = currentDisplayCount < 3;
+                                                                    return {
+                                                                        ...prev,
+                                                                        poi_proximity: [...prev.poi_proximity, { poi_type: poi.id, max_miles: 1.0, display: shouldDisplay, pin_mode: 'filter' }]
+                                                                    };
+                                                                });
                                                             }
                                                         }}
                                                         className={`relative flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all duration-200 gap-2 ${
@@ -771,102 +1031,80 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                     </div>
                                 </div>
 
-                                {/* Bottom: Selected Pins */}
+                                {/* Bottom: Drag and Drop Display & All Pins */}
                                 {((formData.poi_proximity && formData.poi_proximity.length > 0) || (formData.proximity_pins && formData.proximity_pins.length > 0)) && (
-                                    <div className="mt-6 pt-6 border-t border-gray-200 animate-in fade-in duration-300">
-                                        <h4 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
-                                            <span>📍</span> Selected Pins
-                                        </h4>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                            {/* Suggested POIs */}
-                                            {formData.poi_proximity.map((poi, idx) => {
-                                                const config = [
-                                                    { id: 'train_station', label: 'Train Station', icon: '🚂' },
-                                                    { id: 'school', label: 'School', icon: '🎓' },
-                                                    { id: 'hospital', label: 'Hospital', icon: '🏥' },
-                                                    { id: 'supermarket', label: 'Supermarket', icon: '🛒' },
-                                                    { id: 'gym', label: 'Gym', icon: '💪' },
-                                                    { id: 'park', label: 'Park', icon: '🌳' },
-                                                ].find(c => c.id === poi.poi_type) || { label: poi.poi_type, icon: '📍' };
-
-                                                return (
-                                                    <div key={`poi-${idx}`} className="flex items-center gap-4 bg-white p-4 rounded-2xl border-2 border-indigo-50 shadow-sm hover:border-indigo-150 transition-all">
-                                                        <div className="h-12 w-12 shrink-0 bg-indigo-50 rounded-xl flex items-center justify-center text-xl shadow-inner">
-                                                            {config.icon}
-                                                        </div>
-                                                        <div className="flex-1 min-w-0">
-                                                            <p className="text-sm font-bold text-gray-900 truncate">
-                                                                {config.label}
-                                                            </p>
-                                                            <div className="flex items-center gap-1 mt-1">
-                                                                <span className="text-[10px] text-indigo-500 font-bold uppercase">Within</span>
-                                                                <input 
-                                                                    type="number"
-                                                                    step="0.1"
-                                                                    min="0.1"
-                                                                    max="50"
-                                                                    value={poi.max_miles}
-                                                                    onChange={(e) => {
-                                                                        const val = parseFloat(e.target.value) || 1.0;
-                                                                        setFormData(prev => ({
-                                                                            ...prev,
-                                                                            poi_proximity: prev.poi_proximity.map(p => 
-                                                                                p.poi_type === poi.poi_type ? { ...p, max_miles: val } : p
-                                                                            )
-                                                                        }));
-                                                                    }}
-                                                                    className="w-16 h-7 px-2 text-xs rounded-lg border-gray-300 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
-                                                                />
-                                                                <span className="text-[10px] text-indigo-500 font-bold uppercase">mi radius</span>
-                                                            </div>
-                                                        </div>
-                                                        <button 
-                                                            type="button"
-                                                            onClick={() => setFormData(prev => ({
-                                                                ...prev,
-                                                                poi_proximity: prev.poi_proximity.filter(p => p.poi_type !== poi.poi_type)
-                                                            }))}
-                                                            className="h-10 w-10 flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                                                        >
-                                                            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                                            </svg>
-                                                        </button>
-                                                    </div>
-                                                );
-                                            })}
-
-                                            {/* Custom Pins */}
-                                            {formData.proximity_pins.map((pin, idx) => (
-                                                <div key={`custom-${idx}`} className="flex items-center gap-4 bg-white p-4 rounded-2xl border-2 border-indigo-50 shadow-sm hover:border-indigo-150 transition-all">
-                                                    <div className="h-12 w-12 shrink-0 bg-indigo-50 rounded-xl flex items-center justify-center text-xl shadow-inner">
-                                                        📍
-                                                    </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="text-sm font-bold text-gray-900 truncate">
-                                                            {pin.label ? <span className="text-indigo-600 mr-2">{pin.label}</span> : ''}
-                                                            {pin.query}
-                                                        </p>
-                                                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mt-1">
-                                                            {pin.type === 'commute' 
-                                                                ? `${pin.value} min ${pin.mode} commute` 
-                                                                : `Within ${pin.value} mile radius`}
-                                                        </p>
-                                                    </div>
-                                                    <button 
-                                                        type="button"
-                                                        onClick={() => setFormData(prev => ({
-                                                            ...prev,
-                                                            proximity_pins: prev.proximity_pins.filter((_, i) => i !== idx)
-                                                        }))}
-                                                        className="h-10 w-10 flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                                                    >
-                                                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                                        </svg>
-                                                    </button>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6 pt-6 border-t border-gray-200">
+                                        {/* Display Pins zone */}
+                                        <div 
+                                            onDragOver={handleDragOver}
+                                            onDragEnter={handleDragEnterDisplay}
+                                            onDragLeave={handleDragLeaveDisplay}
+                                            onDrop={handleDropToDisplay}
+                                            className={`border-2 border-dashed rounded-2xl p-6 min-h-[220px] transition-all duration-200 animate-in fade-in duration-305 ${
+                                                isDragInvalid 
+                                                    ? 'border-red-500 bg-red-50/60 animate-pulse ring-4 ring-red-100' 
+                                                    : 'bg-indigo-50/20 border-indigo-200 hover:bg-indigo-50/40 hover:border-indigo-300'
+                                            }`}
+                                        >
+                                            <div className="flex items-center justify-between mb-4">
+                                                <h4 className="text-sm font-bold text-indigo-900 flex items-center gap-2">
+                                                    <span>📺</span> Display Pins (Max 3)
+                                                </h4>
+                                                <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full">
+                                                    {displayPins.length} / 3
+                                                </span>
+                                            </div>
+                                            
+                                            {displayPins.length === 0 ? (
+                                                <div className="flex flex-col items-center justify-center h-[130px] text-center text-gray-400 select-none">
+                                                    <span className="text-2xl mb-1">🤝</span>
+                                                    <p className="text-xs font-medium">Drag active pins here to display them on property cards</p>
                                                 </div>
-                                            ))}
+                                            ) : (
+                                                <div className="space-y-3">
+                                                    {displayPins.map(pin => (
+                                                        <DraggablePinItem 
+                                                            key={pin.id} 
+                                                            pin={pin} 
+                                                            handleDragStart={handleDragStart} 
+                                                            togglePinMode={togglePinMode} 
+                                                            setFormData={setFormData} 
+                                                        />
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* All Pins (Remaining Pins) zone */}
+                                        <div 
+                                            onDragOver={handleDragOver}
+                                            onDrop={handleDropToAll}
+                                            className="bg-gray-50/50 border-2 border-dashed border-gray-200 rounded-2xl p-6 min-h-[220px] transition-colors duration-200 hover:bg-gray-50 hover:border-gray-300 animate-in fade-in duration-305"
+                                        >
+                                            <div className="flex items-center justify-between mb-4">
+                                                <h4 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                                                    <span>📍</span> All Pins
+                                                </h4>
+                                            </div>
+                                            
+                                            {otherPins.length === 0 ? (
+                                                <div className="flex flex-col items-center justify-center h-[130px] text-center text-gray-400 select-none">
+                                                    <span className="text-2xl mb-1">💤</span>
+                                                    <p className="text-xs font-medium">No other active pins. Drag pins here from display, or add new ones.</p>
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-3">
+                                                    {otherPins.map(pin => (
+                                                        <DraggablePinItem 
+                                                            key={pin.id} 
+                                                            pin={pin} 
+                                                            handleDragStart={handleDragStart} 
+                                                            togglePinMode={togglePinMode} 
+                                                            setFormData={setFormData} 
+                                                        />
+                                                    ))}
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 )}
@@ -1064,7 +1302,8 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                                             key={property.id} 
                                             property={property} 
                                             searchContext={{ 
-                                                resolvedPins 
+                                                resolvedPins,
+                                                displayPins
                                             }}
                                         />
                                     ))}
@@ -1113,5 +1352,259 @@ export default function Search({ auth, properties, filters, geocodingError, geoc
                 </div>
             </div>
         </Layout>
+    );
+}
+
+function DraggablePinItem({ pin, handleDragStart, togglePinMode, setFormData }) {
+    const initialVal = pin.type === 'suggested' ? pin.max_miles : pin.customPin.value;
+    const [inputValue, setInputValue] = useState(initialVal);
+    const [isEditing, setIsEditing] = useState(false);
+    const [labelValue, setLabelValue] = useState(pin.label);
+
+    useEffect(() => {
+        setInputValue(pin.type === 'suggested' ? pin.max_miles : pin.customPin.value);
+    }, [pin.max_miles, pin.customPin?.value]);
+
+    useEffect(() => {
+        setLabelValue(pin.label);
+    }, [pin.label]);
+
+    const handleSave = () => {
+        let parsed = parseFloat(inputValue);
+        if (isNaN(parsed) || parsed <= 0) {
+            setInputValue(pin.type === 'suggested' ? pin.max_miles : pin.customPin.value);
+            return;
+        }
+        
+        const rounded = Math.round(parsed * 10) / 10;
+        
+        let finalVal = rounded;
+        if (pin.type === 'custom' && pin.customPin.type === 'commute' && finalVal > 60) {
+            finalVal = 60;
+        }
+        if (pin.type === 'suggested' && finalVal > 50) {
+            finalVal = 50;
+        }
+        if (pin.type === 'custom' && pin.customPin.type === 'radius' && finalVal > 50) {
+            finalVal = 50;
+        }
+
+        setInputValue(finalVal);
+
+        setFormData(prev => {
+            if (pin.type === 'suggested') {
+                return {
+                    ...prev,
+                    poi_proximity: prev.poi_proximity.map(p => 
+                        p.poi_type === pin.poi_type ? { ...p, max_miles: finalVal } : p
+                    )
+                };
+            } else {
+                return {
+                    ...prev,
+                    proximity_pins: prev.proximity_pins.map((p, i) => 
+                        i === pin.index ? { ...p, value: finalVal } : p
+                    )
+                };
+            }
+        });
+    };
+
+    const handleSaveLabel = () => {
+        setIsEditing(false);
+        const trimmed = labelValue.trim();
+        if (!trimmed) {
+            setLabelValue(pin.label);
+            return;
+        }
+
+        setFormData(prev => {
+            if (pin.type === 'suggested') {
+                return {
+                    ...prev,
+                    poi_proximity: prev.poi_proximity.map(p => 
+                        p.poi_type === pin.poi_type ? { ...p, label: trimmed } : p
+                    )
+                };
+            } else {
+                return {
+                    ...prev,
+                    proximity_pins: prev.proximity_pins.map((p, i) => 
+                        i === pin.index ? { ...p, label: trimmed } : p
+                    )
+                };
+            }
+        });
+    };
+
+    return (
+        <div 
+            draggable="true"
+            onDragStart={(e) => handleDragStart(e, pin.id)}
+            className="flex items-center gap-3 bg-white p-3.5 rounded-xl border border-gray-200 shadow-sm cursor-grab active:cursor-grabbing hover:border-indigo-300 transition-all select-none group animate-in fade-in duration-200"
+        >
+            <div className="h-9 w-9 shrink-0 bg-indigo-50 rounded-lg flex items-center justify-center text-lg shadow-inner">
+                {pin.icon}
+            </div>
+            <div className="flex-1 min-w-0">
+                {isEditing ? (
+                    <input 
+                        type="text"
+                        value={labelValue}
+                        onChange={(e) => setLabelValue(e.target.value)}
+                        onBlur={handleSaveLabel}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                                handleSaveLabel();
+                            } else if (e.key === 'Escape') {
+                                setLabelValue(pin.label);
+                                setIsEditing(false);
+                            }
+                        }}
+                        className="w-full bg-white border border-indigo-300 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 p-0 px-1 py-0.5 text-xs font-bold text-gray-900 rounded"
+                        autoFocus
+                        draggable="false"
+                        onDragStart={e => e.stopPropagation()}
+                        onMouseDown={e => e.stopPropagation()}
+                    />
+                ) : (
+                    <p 
+                        onClick={() => setIsEditing(true)}
+                        className="text-xs font-bold text-gray-900 truncate hover:bg-gray-50 hover:ring-1 hover:ring-indigo-100 rounded px-1 -ml-1 cursor-text"
+                        title="Click to edit name"
+                    >
+                        {pin.label}
+                    </p>
+                )}
+                {pin.type === 'suggested' ? (
+                    <div className="flex items-center gap-1 mt-1" draggable="false" onDragStart={e => e.stopPropagation()}>
+                        <span className="text-[9px] text-indigo-500 font-bold uppercase">Within</span>
+                        <input 
+                            type="text"
+                            value={inputValue}
+                            onChange={(e) => setInputValue(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    handleSave();
+                                    e.target.blur();
+                                }
+                            }}
+                            onBlur={handleSave}
+                            disabled={pin.pin_mode === 'display'}
+                            className={`w-12 h-6 px-1 text-[10px] text-center rounded-lg border-gray-300 focus:ring-indigo-500 focus:border-indigo-500 font-bold transition-colors ${
+                                pin.pin_mode === 'display'
+                                    ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
+                                    : 'bg-white text-gray-900'
+                            }`}
+                        />
+                        <span className="text-[9px] text-indigo-500 font-bold uppercase">mi</span>
+                    </div>
+                ) : pin.customPin.type === 'commute' ? (
+                    <div className="flex items-center gap-1 mt-1" draggable="false" onDragStart={e => e.stopPropagation()}>
+                        <input 
+                            type="text"
+                            value={inputValue}
+                            onChange={(e) => setInputValue(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    handleSave();
+                                    e.target.blur();
+                                }
+                            }}
+                            onBlur={handleSave}
+                            disabled={pin.pin_mode === 'display'}
+                            className={`w-12 h-6 px-1 text-[10px] text-center rounded-lg border-gray-300 focus:ring-indigo-500 focus:border-indigo-500 font-bold transition-colors ${
+                                pin.pin_mode === 'display'
+                                    ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
+                                    : 'bg-white text-gray-900'
+                            }`}
+                        />
+                        <span className="text-[9px] text-gray-400 font-bold uppercase">min {pin.customPin.mode} commute</span>
+                    </div>
+                ) : (
+                    <div className="flex items-center gap-1 mt-1" draggable="false" onDragStart={e => e.stopPropagation()}>
+                        <span className="text-[9px] text-indigo-500 font-bold uppercase">Within</span>
+                        <input 
+                            type="text"
+                            value={inputValue}
+                            onChange={(e) => setInputValue(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    handleSave();
+                                    e.target.blur();
+                                }
+                            }}
+                            onBlur={handleSave}
+                            disabled={pin.pin_mode === 'display'}
+                            className={`w-12 h-6 px-1 text-[10px] text-center rounded-lg border-gray-300 focus:ring-indigo-500 focus:border-indigo-500 font-bold transition-colors ${
+                                pin.pin_mode === 'display'
+                                    ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
+                                    : 'bg-white text-gray-900'
+                            }`}
+                        />
+                        <span className="text-[9px] text-indigo-500 font-bold uppercase">mi radius</span>
+                    </div>
+                )}
+            </div>
+            <div 
+                className="flex p-0.5 bg-gray-100 rounded-lg border border-gray-200 shrink-0" 
+                draggable="false" 
+                onDragStart={e => e.stopPropagation()}
+                onClick={e => e.stopPropagation()}
+            >
+                <button
+                    type="button"
+                    onClick={() => {
+                        if (pin.pin_mode !== 'filter') {
+                            togglePinMode(pin);
+                        }
+                    }}
+                    className={`px-2 py-1 text-[9px] font-bold rounded transition-all uppercase tracking-wider ${
+                        pin.pin_mode === 'filter'
+                            ? 'bg-indigo-600 text-white shadow-sm'
+                            : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                >
+                    Filter
+                </button>
+                <button
+                    type="button"
+                    onClick={() => {
+                        if (pin.pin_mode !== 'display') {
+                            togglePinMode(pin);
+                        }
+                    }}
+                    className={`px-2 py-1 text-[9px] font-bold rounded transition-all uppercase tracking-wider ${
+                        pin.pin_mode === 'display'
+                            ? 'bg-indigo-600 text-white shadow-sm'
+                            : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                >
+                    Display Only
+                </button>
+            </div>
+            <button 
+                type="button"
+                onClick={() => {
+                    if (pin.type === 'suggested') {
+                        setFormData(prev => ({
+                            ...prev,
+                            poi_proximity: prev.poi_proximity.filter(p => p.poi_type !== pin.poi_type)
+                        }));
+                    } else {
+                        setFormData(prev => ({
+                            ...prev,
+                            proximity_pins: prev.proximity_pins.filter((_, i) => i !== pin.index)
+                        }));
+                    }
+                }}
+                className="h-8 w-8 flex items-center justify-center text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                title="Remove Pin"
+            >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
     );
 }

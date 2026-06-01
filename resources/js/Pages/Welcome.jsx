@@ -121,7 +121,7 @@ export default function Welcome({ auth }) {
 
     return (
         <>
-            <Head title="Welcome to Homerge" />
+            <Head title="Homerge" />
             <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50">
                 <nav className="border-b border-gray-200 bg-white/80 backdrop-blur-sm">
                     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -162,15 +162,11 @@ export default function Welcome({ auth }) {
 
                 <main className="flex min-h-[calc(100vh-4rem)] items-center justify-center px-4">
                     <div className="text-center w-full max-w-2xl">
-                        <h1 className="mb-6 text-6xl font-bold tracking-tight text-gray-900 sm:text-7xl">
-                            Welcome to{' '}
+                        <h1 className="mb-10 text-6xl font-bold tracking-tight text-gray-900 sm:text-7xl">
                             <span className="bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
                                 Homerge
                             </span>
                         </h1>
-                        <p className="mb-10 text-xl text-gray-600">
-                            Your trusted platform for finding the perfect property
-                        </p>
                         
                         {/* AI Search Bar */}
                         <div className="mb-6 text-left">

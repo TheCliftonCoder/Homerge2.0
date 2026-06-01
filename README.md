@@ -25,8 +25,14 @@
     - **Future Goal:** Implement a hybrid model where initial candidates are fetched via SQL, then refined in the PHP Collection layer using exact Haversine math for perfect circular radii.
 *   **Geospatial Cache Warming:** Pre-calculating common landmark coordinates to reduce first-hit latency.
 
+## Development Guidelines
+
+### Emoji Policy (Strict)
+* **No Emojis in Code:** Emojis are strictly banned from all future code additions. Do not use emojis in headers, buttons, panels, labels, or other user interface elements. Keep the design clean, modern, and professional.
+
 ---
 
 <p align="center">
     <i>Developed directly as an exploratory prototype demonstrating modern, agentic workflows inside standard web infrastructure.</i>
 </p>
+

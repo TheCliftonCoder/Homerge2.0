@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { router, usePage } from '@inertiajs/react';
+import { router, usePage, Link } from '@inertiajs/react';
 
 export default function PropertyCard({ property, isFavourited = false, searchContext = {} }) {
     const { auth } = usePage().props;
@@ -11,9 +11,9 @@ export default function PropertyCard({ property, isFavourited = false, searchCon
     const hasImages = images.length > 0;
 
     const formatPrice = (price) => {
-        return new Intl.NumberFormat('en-US', {
+        return new Intl.NumberFormat('en-GB', {
             style: 'currency',
-            currency: 'USD',
+            currency: 'GBP',
             minimumFractionDigits: 0,
             maximumFractionDigits: 0,
         }).format(price);
@@ -47,6 +47,10 @@ export default function PropertyCard({ property, isFavourited = false, searchCon
         if (mode === 'driving') {
             const mins = Math.round(miles * 3); // 20mph urban avg
             return `~${mins} min drive`;
+        }
+        if (mode === 'cycling') {
+            const mins = Math.round(miles * 6); // 10mph avg
+            return `~${mins} min cycle`;
         }
         return '';
     };
@@ -99,25 +103,6 @@ export default function PropertyCard({ property, isFavourited = false, searchCon
             <div className="relative border-b-2 border-indigo-100 bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50 px-8 py-6">
                 <div className="flex items-center justify-between gap-4">
                     <div className="flex items-center gap-2.5">
-                        <svg
-                            className="h-7 w-7 text-indigo-600"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                        >
-                            <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-                            />
-                            <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-                            />
-                        </svg>
                         <div className="flex flex-col">
                             <span className="text-2xl font-bold text-gray-900">
                                 {property.street_address || property.location}
@@ -128,106 +113,74 @@ export default function PropertyCard({ property, isFavourited = false, searchCon
                                 </span>
                             )}
 
-                            {/* Proximity Badges */}
-                            <div className="flex flex-wrap gap-2 mt-3">
-                                {/* Mode 1: POIs */}
-                                {property.poi_cache?.map((poi, idx) => {
-                                    const isSelected = activeLocation?.key === `poi-${poi.poi_type}`;
-                                    return (
-                                        <button
-                                            key={`poi-${idx}`}
-                                            type="button"
-                                            onClick={() => setActiveLocation(prev => 
-                                                prev?.key === `poi-${poi.poi_type}` 
-                                                    ? null 
-                                                    : { 
-                                                        key: `poi-${poi.poi_type}`, 
-                                                        label: poi.poi_type.replace('_', ' '), 
-                                                        icon: getPoiIcon(poi.poi_type), 
-                                                        name: poi.name, 
-                                                        lat: poi.latitude, 
-                                                        lng: poi.longitude 
-                                                    }
-                                            )}
-                                            className={`flex items-center gap-1.5 border px-2.5 py-1 rounded-full text-[10px] font-bold shadow-sm hover:scale-105 active:scale-95 transition-all ${
-                                                isSelected 
-                                                    ? 'bg-indigo-600 border-indigo-700 text-white' 
-                                                    : 'bg-white/80 border-indigo-100 text-indigo-700 hover:bg-indigo-50'
-                                            }`}
-                                        >
-                                            <span>{getPoiIcon(poi.poi_type)}</span>
-                                            <span>{Number(poi.distance_miles).toFixed(1)}mi</span>
-                                            <span className={`font-medium whitespace-nowrap ${isSelected ? 'text-indigo-200' : 'text-gray-400'}`}>· {getTravelTimeStr(poi.distance_miles, 'walking')}</span>
-                                        </button>
-                                    );
-                                })}
+                            {/* Commented out top-level custom pins badges
+                            {searchContext?.resolvedPins && searchContext.resolvedPins.length > 0 && (
+                                <div className="flex flex-wrap gap-2 mt-3">
+                                    {searchContext.resolvedPins.map((pin, idx) => {
+                                        const isSelected = activeLocation?.key === `pin-${idx}`;
+                                        if (pin.type === 'radius') {
+                                            const dist = calculateDistance(property.latitude, property.longitude, pin.lat || 0, pin.lng || 0);
+                                            return (
+                                                <button
+                                                    key={`pin-${idx}`}
+                                                    type="button"
+                                                    onClick={() => setActiveLocation(prev => 
+                                                        prev?.key === `pin-${idx}` 
+                                                            ? null 
+                                                            : { 
+                                                                key: `pin-${idx}`, 
+                                                                label: pin.label || pin.query, 
+                                                                icon: '📍', 
+                                                                name: pin.resolved_name || pin.query, 
+                                                                lat: pin.lat, 
+                                                                lng: pin.lng 
+                                                            }
+                                                    )}
+                                                    className={`flex items-center gap-1.5 border px-2.5 py-1 rounded-full text-[10px] font-bold shadow-sm hover:scale-105 active:scale-95 transition-all ${
+                                                        isSelected 
+                                                            ? 'bg-amber-600 border-amber-700 text-white' 
+                                                            : 'bg-amber-50 border-amber-100 text-amber-700 hover:bg-amber-100'
+                                                    }`}
+                                                >
+                                                    <span>📍</span>
+                                                    <span>{pin.label || pin.query}: {Number(dist).toFixed(1)}mi</span>
+                                                </button>
+                                            );
+                                        }
+                                        
+                                        if (pin.type === 'commute') {
+                                            return (
+                                                <button
+                                                    key={`pin-${idx}`}
+                                                    type="button"
+                                                    onClick={() => setActiveLocation(prev => 
+                                                        prev?.key === `pin-${idx}` 
+                                                            ? null 
+                                                            : { 
+                                                                key: `pin-${idx}`, 
+                                                                label: pin.label || pin.query, 
+                                                                icon: pin.mode === 'driving' ? '🚗' : pin.mode === 'cycling' ? '🚲' : '🚶', 
+                                                                name: pin.resolved_name || pin.query, 
+                                                                lat: pin.lat, 
+                                                                lng: pin.lng 
+                                                            }
+                                                    )}
+                                                    className={`flex items-center gap-1.5 border px-2.5 py-1 rounded-full text-[10px] font-bold shadow-sm hover:scale-105 active:scale-95 transition-all ${
+                                                        isSelected 
+                                                            ? 'bg-emerald-600 border-emerald-700 text-white' 
+                                                            : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+                                                    }`}
+                                                >
+                                                    <span>{pin.mode === 'driving' ? '🚗' : pin.mode === 'cycling' ? '🚲' : '🚶'}</span>
+                                                    <span>{pin.label || pin.query}: Under {pin.minutes}m</span>
+                                                </button>
+                                            );
+                                        }
+                                        return null;
+                                    })}
+                                </div>
+                            )}
 
-                                {/* Pins (Distance or Commute) */}
-                                {searchContext?.resolvedPins?.map((pin, idx) => {
-                                    const isSelected = activeLocation?.key === `pin-${idx}`;
-                                    if (pin.type === 'radius') {
-                                        const dist = calculateDistance(property.latitude, property.longitude, pin.lat || 0, pin.lng || 0);
-                                        return (
-                                            <button
-                                                key={`pin-${idx}`}
-                                                type="button"
-                                                onClick={() => setActiveLocation(prev => 
-                                                    prev?.key === `pin-${idx}` 
-                                                        ? null 
-                                                        : { 
-                                                            key: `pin-${idx}`, 
-                                                            label: pin.label || pin.query, 
-                                                            icon: '📍', 
-                                                            name: pin.resolved_name || pin.query, 
-                                                            lat: pin.lat, 
-                                                            lng: pin.lng 
-                                                        }
-                                                )}
-                                                className={`flex items-center gap-1.5 border px-2.5 py-1 rounded-full text-[10px] font-bold shadow-sm hover:scale-105 active:scale-95 transition-all ${
-                                                    isSelected 
-                                                        ? 'bg-amber-600 border-amber-700 text-white' 
-                                                        : 'bg-amber-50 border-amber-100 text-amber-700 hover:bg-amber-100'
-                                                }`}
-                                            >
-                                                <span>📍</span>
-                                                <span>{pin.label || pin.query}: {Number(dist).toFixed(1)}mi</span>
-                                            </button>
-                                        );
-                                    }
-                                    
-                                    if (pin.type === 'commute') {
-                                        return (
-                                            <button
-                                                key={`pin-${idx}`}
-                                                type="button"
-                                                onClick={() => setActiveLocation(prev => 
-                                                    prev?.key === `pin-${idx}` 
-                                                        ? null 
-                                                        : { 
-                                                            key: `pin-${idx}`, 
-                                                            label: pin.label || pin.query, 
-                                                            icon: pin.mode === 'driving' ? '🚗' : pin.mode === 'cycling' ? '🚲' : '🚶', 
-                                                            name: pin.resolved_name || pin.query, 
-                                                            lat: pin.lat, 
-                                                            lng: pin.lng 
-                                                        }
-                                                )}
-                                                className={`flex items-center gap-1.5 border px-2.5 py-1 rounded-full text-[10px] font-bold shadow-sm hover:scale-105 active:scale-95 transition-all ${
-                                                    isSelected 
-                                                        ? 'bg-emerald-600 border-emerald-700 text-white' 
-                                                        : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
-                                                }`}
-                                            >
-                                                <span>{pin.mode === 'driving' ? '🚗' : pin.mode === 'cycling' ? '🚲' : '🚶'}</span>
-                                                <span>{pin.label || pin.query}: Under {pin.minutes}m</span>
-                                            </button>
-                                        );
-                                    }
-                                    return null;
-                                })}
-                            </div>
-
-                            {/* Proximity Location Detail Bubble */}
                             {activeLocation && (
                                 <div className="mt-4 p-4 bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-150 rounded-2xl text-xs text-indigo-900 shadow-md animate-in slide-in-from-top-2 duration-300 relative">
                                     <button 
@@ -254,6 +207,7 @@ export default function PropertyCard({ property, isFavourited = false, searchCon
                                     </p>
                                 </div>
                             )}
+                            */}
                         </div>
                     </div>
                     <span className="bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-4xl font-extrabold text-transparent">
@@ -385,27 +339,48 @@ export default function PropertyCard({ property, isFavourited = false, searchCon
                 )}
             </div>
 
+            {/* Display Pins side by side under the picture */}
+            {searchContext?.displayPins && searchContext.displayPins.length > 0 && (
+                <div className="border-b border-gray-100 bg-gradient-to-r from-indigo-50/20 via-purple-50/20 to-pink-50/20 px-6 py-3.5 flex gap-3">
+                    {searchContext.displayPins.map((pin, idx) => {
+                        let valueText = '';
+                        if (pin.type === 'suggested') {
+                            const poi = property.poi_cache?.find(p => p.poi_type === pin.poi_type);
+                            if (poi) {
+                                const dist = Number(poi.distance_miles).toFixed(1);
+                                valueText = `${dist}mi (${getTravelTimeStr(poi.distance_miles, 'walking')})`;
+                            } else {
+                                valueText = 'Not nearby';
+                            }
+                        } else if (pin.type === 'custom') {
+                            if (pin.resolved) {
+                                const dist = calculateDistance(property.latitude, property.longitude, pin.resolved.lat, pin.resolved.lng);
+                                if (pin.customPin.type === 'commute') {
+                                    valueText = getTravelTimeStr(dist, pin.customPin.mode || 'driving');
+                                } else {
+                                    valueText = `${Number(dist).toFixed(1)}mi`;
+                                }
+                            } else {
+                                valueText = 'Resolving...';
+                            }
+                        }
+                        return (
+                            <div key={idx} className="flex-1 flex flex-col items-center justify-center p-2 rounded-xl bg-white border border-indigo-50 shadow-sm text-center min-w-0">
+                                <span className="text-lg mb-0.5">{pin.icon}</span>
+                                <span className="text-[10px] font-extrabold text-gray-900 truncate w-full" title={pin.label}>
+                                    {pin.label}
+                                </span>
+                                <span className="text-[9px] font-bold text-indigo-600 truncate w-full mt-0.5">
+                                    {valueText}
+                                </span>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
             {/* Bottom Legend */}
             <div className="relative space-y-4 bg-gradient-to-b from-white to-gray-50 p-8">
-                <div className="flex items-center justify-center">
-                    <div className="flex items-center gap-2.5 rounded-full bg-purple-50 px-6 py-3 text-purple-700 transition-colors hover:bg-purple-100">
-                        <svg
-                            className="h-7 w-7"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                        >
-                            <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M4 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-3zM14 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1h-4a1 1 0 01-1-1v-3z"
-                            />
-                        </svg>
-                        <span className="text-xl font-bold">{property.size_sqft.toLocaleString()} sqft</span>
-                    </div>
-                </div>
-
                 <div className="flex items-center justify-between rounded-xl border-2 border-gray-100 bg-white px-6 py-4 shadow-sm">
                     <div className="flex items-center gap-3">
                         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 text-white shadow-md">
@@ -425,12 +400,12 @@ export default function PropertyCard({ property, isFavourited = false, searchCon
                 </div>
 
                 {/* View Details Button */}
-                <a
-                    href={`/properties/${property.id}`}
+                <Link
+                    href={`/properties/${property.id}${window.location.search}`}
                     className="mt-4 block w-full rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-4 text-center text-xl font-bold text-white shadow-lg transition-all duration-300 hover:from-indigo-700 hover:to-purple-700 hover:shadow-xl hover:scale-105"
                 >
                     View Details
-                </a>
+                </Link>
             </div>
         </div>
     );
