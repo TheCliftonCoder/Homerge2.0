@@ -544,6 +544,11 @@ class PropertyController extends Controller
             }
         }
 
+        $savedSearches = [];
+        if (Auth::check() && Auth::user()->role === 'applicant') {
+            $savedSearches = Auth::user()->savedSearches()->get(['id', 'name', 'filters']);
+        }
+
         return Inertia::render('Properties/Search', [
             'properties' => $properties,
             'filters' => $normalizedFilters,
@@ -552,6 +557,7 @@ class PropertyController extends Controller
             'resolvedPins' => $resolvedPins,
             'appDebug' => $isDebug,
             'debugInfo' => $isDebug ? $debugLogs : null,
+            'savedSearches' => $savedSearches,
         ]);
     }
 

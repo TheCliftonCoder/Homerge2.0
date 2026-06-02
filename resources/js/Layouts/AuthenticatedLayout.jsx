@@ -73,6 +73,12 @@ export default function AuthenticatedLayout({ header, children }) {
                                 {user.role === 'applicant' && (
                                     <>
                                         <NavLink
+                                            href={route('searches.index')}
+                                            active={route().current('searches.index')}
+                                        >
+                                            Searches
+                                        </NavLink>
+                                        <NavLink
                                             href={route('favourites.index')}
                                             active={route().current('favourites.index')}
                                         >
@@ -238,6 +244,12 @@ export default function AuthenticatedLayout({ header, children }) {
                         )}
                         {user.role === 'applicant' && (
                             <>
+                                <ResponsiveNavLink
+                                    href={route('searches.index')}
+                                    active={route().current('searches.index')}
+                                >
+                                    Searches
+                                </ResponsiveNavLink>
                                 <ResponsiveNavLink
                                     href={route('favourites.index')}
                                     active={route().current('favourites.index')}

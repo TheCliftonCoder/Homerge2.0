@@ -49,6 +49,10 @@ Route::middleware('auth')->group(function () {
             Route::post('/properties/{property}/enquire', [\App\Http\Controllers\EnquiryController::class , 'store'])->name('properties.enquire');
             Route::get('/enquiries', [\App\Http\Controllers\EnquiryController::class , 'index'])->name('enquiries.index');
             Route::delete('/enquiries/{enquiry}', [\App\Http\Controllers\EnquiryController::class , 'destroy'])->name('enquiries.destroy');
+            Route::get('/searches', [\App\Http\Controllers\SavedSearchController::class, 'index'])->name('searches.index');
+            Route::post('/searches', [\App\Http\Controllers\SavedSearchController::class, 'store'])->name('searches.store');
+            Route::patch('/searches/{savedSearch}', [\App\Http\Controllers\SavedSearchController::class, 'update'])->name('searches.update');
+            Route::delete('/searches/{savedSearch}', [\App\Http\Controllers\SavedSearchController::class, 'destroy'])->name('searches.destroy');
         }
         );
 

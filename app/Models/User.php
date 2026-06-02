@@ -22,6 +22,8 @@ class User extends Authenticatable
         'email',
         'password',
         'role',
+        'last_login_at',
+        'previous_login_at',
     ];
 
     /**
@@ -44,6 +46,8 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'last_login_at' => 'datetime',
+            'previous_login_at' => 'datetime',
         ];
     }
 
@@ -62,5 +66,13 @@ class User extends Authenticatable
     public function propertyEnquiries()
     {
         return $this->hasMany(PropertyEnquiry::class);
+    }
+
+    /**
+     * The saved searches created by the user.
+     */
+    public function savedSearches()
+    {
+        return $this->hasMany(SavedSearch::class);
     }
 }

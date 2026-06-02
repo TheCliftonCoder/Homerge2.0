@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Head, router } from '@inertiajs/react';
+import { Head, router, usePage } from '@inertiajs/react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import PublicLayout from '@/Layouts/PublicLayout';
 import PropertyCard from '@/Components/PropertyCard';
@@ -81,7 +81,72 @@ const assignDisplayFlags = (poiProximity = [], proximityPins = []) => {
     };
 };
 
-export default function Search({ auth, properties, filters = {}, geocodingError, geocodingErrors = [], resolvedPins = [], isochroneResolved = null, appDebug = false, debugInfo = null }) {
+const normalizeFiltersForComparison = (filters) => {
+    if (!filters) return {};
+    const normalized = {};
+
+    const scalarKeys = [
+        'location', 'radius', 'min_price', 'max_price', 
+        'property_category', 'transaction_type', 'bedrooms', 
+        'bathrooms', 'property_type', 'parking', 'garden', 
+        'min_size', 'max_size', 'tenure', 'furnished', 
+        'pets_allowed', 'available_from'
+    ];
+
+    scalarKeys.forEach(key => {
+        const val = filters[key];
+        if (val !== undefined && val !== null && val !== '') {
+            normalized[key] = String(val).trim().toLowerCase();
+        }
+    });
+
+    const pins = filters.proximity_pins || [];
+    const normalizedPins = pins
+        .filter(p => p && p.query)
+        .map(p => {
+            return {
+                type: (p.type || 'commute').toLowerCase(),
+                query: String(p.query).trim().toLowerCase(),
+                value: p.value ? parseFloat(p.value) : null,
+                mode: p.mode ? String(p.mode).trim().toLowerCase() : null,
+                pin_mode: (p.pin_mode || 'filter').toLowerCase()
+            };
+        })
+        .sort((a, b) => a.query.localeCompare(b.query) || (a.type || '').localeCompare(b.type || ''));
+
+    if (normalizedPins.length > 0) {
+        normalized.proximity_pins = normalizedPins;
+    }
+
+    const pois = filters.poi_proximity || [];
+    const normalizedPois = pois
+        .filter(p => p && p.poi_type)
+        .map(p => {
+            return {
+                poi_type: String(p.poi_type).trim().toLowerCase(),
+                max_miles: p.max_miles ? parseFloat(p.max_miles) : 1.0,
+                pin_mode: (p.pin_mode || 'filter').toLowerCase()
+            };
+        })
+        .sort((a, b) => a.poi_type.localeCompare(b.poi_type));
+
+    if (normalizedPois.length > 0) {
+        normalized.poi_proximity = normalizedPois;
+    }
+
+    return normalized;
+};
+
+const isSearchDuplicate = (currentForm, savedList) => {
+    if (!savedList || savedList.length === 0) return false;
+    const canonicalCurrent = JSON.stringify(normalizeFiltersForComparison(currentForm));
+    return savedList.some(saved => {
+        const canonicalSaved = JSON.stringify(normalizeFiltersForComparison(saved.filters));
+        return canonicalCurrent === canonicalSaved;
+    });
+};
+
+export default function Search({ auth, properties, filters = {}, geocodingError, geocodingErrors = [], resolvedPins = [], isochroneResolved = null, appDebug = false, debugInfo = null, savedSearches = [] }) {
     const [isFiltersCollapsed, setIsFiltersCollapsed] = useState(properties.total > 0);
     const [pinFormMode, setPinFormMode] = useState('commute'); // 'commute' or 'radius'
     const [pinQuery, setPinQuery] = useState('');
@@ -96,6 +161,23 @@ export default function Search({ auth, properties, filters = {}, geocodingError,
     const [lastParsedFilters, setLastParsedFilters] = useState(null);
     const [debugTab, setDebugTab] = useState('parser');
     const [isDragInvalid, setIsDragInvalid] = useState(false);
+
+    const [isSavingSearch, setIsSavingSearch] = useState(false);
+    const [savedSearchName, setSavedSearchName] = useState('');
+
+    const submitSaveSearch = () => {
+        if (!savedSearchName.trim()) return;
+        router.post('/searches', {
+            name: savedSearchName.trim(),
+            filters: formData
+        }, {
+            preserveState: true,
+            onSuccess: () => {
+                setIsSavingSearch(false);
+                setSavedSearchName('');
+            }
+        });
+    };
 
     const [formData, setFormData] = useState({
         location: filters.location || '',
@@ -426,6 +508,16 @@ export default function Search({ auth, properties, filters = {}, geocodingError,
 
             <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 py-8">
                 <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+                    {usePage().props.flash?.success && (
+                        <div className="mb-6 p-4 bg-emerald-50 border border-emerald-250 text-emerald-800 text-sm font-bold rounded-xl flex items-center justify-between shadow-sm animate-in fade-in duration-300">
+                            <span>{usePage().props.flash.success}</span>
+                        </div>
+                    )}
+                    {usePage().props.errors?.error && (
+                        <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-800 text-sm font-semibold rounded-xl flex items-center justify-between shadow-sm animate-in fade-in duration-300">
+                            <span>{usePage().props.errors.error}</span>
+                        </div>
+                    )}
 
                     {/* AI Prompt Panel */}
                     <div className="mb-6 rounded-2xl bg-gradient-to-r from-indigo-50 to-violet-50 border border-indigo-100 shadow-lg p-6">
@@ -505,20 +597,62 @@ export default function Search({ auth, properties, filters = {}, geocodingError,
                                         </div>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-3">
+                                <div className='flex items-center gap-3'>
+                                    {auth?.user && auth.user.role === 'applicant' && activeFilterCount > 0 && !isSearchDuplicate(formData, savedSearches) && (
+                                        isSavingSearch ? (
+                                            <div className='flex items-center gap-2 animate-in slide-in-from-top-2 duration-200'>
+                                                <input 
+                                                    type='text'
+                                                    placeholder='Name your search'
+                                                    value={savedSearchName}
+                                                    onChange={e => setSavedSearchName(e.target.value)}
+                                                    className='rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2.5 text-sm px-4 w-48'
+                                                    autoFocus
+                                                />
+                                                <button
+                                                    type='button'
+                                                    onClick={submitSaveSearch}
+                                                    disabled={!savedSearchName.trim()}
+                                                    className='rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed'
+                                                >
+                                                    Save
+                                                </button>
+                                                <button
+                                                    type='button'
+                                                    onClick={() => {
+                                                        setIsSavingSearch(false);
+                                                        setSavedSearchName('');
+                                                    }}
+                                                    className='rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50'
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <button
+                                                type='button'
+                                                onClick={() => setIsSavingSearch(true)}
+                                                className='rounded-xl border-2 border-indigo-600 bg-white px-5 py-2.5 text-sm font-bold text-indigo-600 transition-all hover:bg-indigo-50 active:scale-95 shadow-sm'
+                                            >
+                                                Save Search
+                                            </button>
+                                        )
+                                    )}
                                     <button
+                                        type='button'
                                         onClick={() => setIsFiltersCollapsed(false)}
-                                        className="rounded-xl border-2 border-indigo-200 bg-white px-5 py-2.5 text-sm font-bold text-indigo-700 transition-all hover:bg-indigo-50 hover:border-indigo-300 active:scale-95 shadow-sm"
+                                        className='rounded-xl border-2 border-indigo-200 bg-white px-5 py-2.5 text-sm font-bold text-indigo-700 transition-all hover:bg-indigo-50 hover:border-indigo-300 active:scale-95 shadow-sm'
                                     >
                                         Pins
                                     </button>
                                     <button
+                                        type='button'
                                         onClick={handleClear}
-                                        className="p-3 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                                        title="Clear All"
+                                        className='p-3 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all'
+                                        title='Clear All'
                                     >
-                                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                        <svg className='h-5 w-5' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
+                                            <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16' />
                                         </svg>
                                     </button>
                                 </div>
@@ -1111,20 +1245,22 @@ export default function Search({ auth, properties, filters = {}, geocodingError,
                             </div>
 
                             {/* Action Buttons */}
-                            <div className="mt-6 flex gap-4">
-                                <button
-                                    type="submit"
-                                    className="flex-1 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-3 font-semibold text-white shadow-lg transition-all hover:from-indigo-700 hover:to-purple-700 hover:shadow-xl"
-                                >
-                                    {activeFilterCount > 0 ? 'Update Search' : 'Search Properties'}
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={handleClear}
-                                    className="rounded-lg border-2 border-gray-300 px-6 py-3 font-semibold text-gray-700 transition-all hover:border-gray-400 hover:bg-gray-50"
-                                >
-                                    Clear Filters
-                                </button>
+                            <div className='mt-6 flex flex-col gap-4'>
+                                <div className='flex gap-4'>
+                                    <button
+                                        type='submit'
+                                        className='flex-1 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-3 font-semibold text-white shadow-lg transition-all hover:from-indigo-700 hover:to-purple-700 hover:shadow-xl'
+                                    >
+                                        {activeFilterCount > 0 ? 'Update Search' : 'Search Properties'}
+                                    </button>
+                                    <button
+                                        type='button'
+                                        onClick={handleClear}
+                                        className='rounded-lg border-2 border-gray-300 px-6 py-3 font-semibold text-gray-700 transition-all hover:border-gray-400 hover:bg-gray-50'
+                                    >
+                                        Clear Filters
+                                    </button>
+                                </div>
                             </div>
                         </form>
                     )}
