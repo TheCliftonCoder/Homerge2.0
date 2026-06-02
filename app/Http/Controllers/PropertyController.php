@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Conversation;
 use App\Models\GeneralProperty;
 use App\Models\ResidentialProperty;
 use App\Models\CommercialProperty;
@@ -58,9 +59,9 @@ class PropertyController extends Controller
         // Check if the authenticated user has already enquired about this property
         $hasEnquired = false;
         if (Auth::check() && Auth::user()->role === 'applicant') {
-            $hasEnquired = Auth::user()
-                ->propertyEnquiries()
+            $hasEnquired = Conversation::where('applicant_id', Auth::id())
                 ->where('general_property_id', $property->id)
+                ->where('is_enquiry', true)
                 ->exists();
         }
 

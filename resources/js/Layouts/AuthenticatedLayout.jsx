@@ -44,12 +44,7 @@ export default function AuthenticatedLayout({ header, children }) {
                                         >
                                             My Properties
                                         </NavLink>
-                                        <NavLink
-                                            href={route('agent.enquiries')}
-                                            active={route().current('agent.enquiries')}
-                                        >
-                                            My Enquiries
-                                        </NavLink>
+
                                         <NavLink
                                             href={route('applicant.cards')}
                                             active={route().current('applicant.cards')}
@@ -84,12 +79,7 @@ export default function AuthenticatedLayout({ header, children }) {
                                         >
                                             Favourites
                                         </NavLink>
-                                        <NavLink
-                                            href={route('enquiries.index')}
-                                            active={route().current('enquiries.index')}
-                                        >
-                                            My Enquiries
-                                        </NavLink>
+
                                         <NavLink
                                             href={route('messages.index')}
                                             active={route().current('messages.*')}
@@ -216,12 +206,7 @@ export default function AuthenticatedLayout({ header, children }) {
                                 >
                                     My Properties
                                 </ResponsiveNavLink>
-                                <ResponsiveNavLink
-                                    href={route('agent.enquiries')}
-                                    active={route().current('agent.enquiries')}
-                                >
-                                    My Enquiries
-                                </ResponsiveNavLink>
+
                                 <ResponsiveNavLink
                                     href={route('applicant.cards')}
                                     active={route().current('applicant.cards')}
@@ -256,12 +241,7 @@ export default function AuthenticatedLayout({ header, children }) {
                                 >
                                     Favourites
                                 </ResponsiveNavLink>
-                                <ResponsiveNavLink
-                                    href={route('enquiries.index')}
-                                    active={route().current('enquiries.index')}
-                                >
-                                    My Enquiries
-                                </ResponsiveNavLink>
+
                                 <ResponsiveNavLink
                                     href={route('messages.index')}
                                     active={route().current('messages.*')}

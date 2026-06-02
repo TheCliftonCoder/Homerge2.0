@@ -31,6 +31,11 @@ class MessageController extends Controller
                 ->first();
 
             if ($conversation) {
+                if ($user->role === 'agent' && $conversation->agent_deleted_at !== null) {
+                    $conversation->update(['agent_deleted_at' => null]);
+                } elseif ($user->role === 'applicant' && $conversation->applicant_deleted_at !== null) {
+                    $conversation->update(['applicant_deleted_at' => null]);
+                }
                 return redirect()->route('messages.show', $conversation->id);
             }
             
@@ -49,10 +54,21 @@ class MessageController extends Controller
         
         // Fetch conversations for the sidebar
         $query = Conversation::where(function ($q) use ($user) {
-                $q->where('agent_id', $user->id)
-                  ->orWhere('applicant_id', $user->id);
-            })
-            ->with(['agent', 'applicant', 'generalProperty', 'latestMessage.sender'])
+                $q->where(function ($sq) use ($user) {
+                    $sq->where('agent_id', $user->id)->whereNull('agent_deleted_at');
+                })->orWhere(function ($sq) use ($user) {
+                    $sq->where('applicant_id', $user->id)->whereNull('applicant_deleted_at');
+                });
+            });
+
+        if ($user->role === 'agent') {
+            $query->where(function ($q) {
+                $q->where('initiated_by', 'agent')
+                  ->orWhereHas('messages');
+            });
+        }
+
+        $query->with(['agent', 'applicant', 'generalProperty', 'latestMessage.sender'])
             ->orderBy('updated_at', 'desc');
 
         $conversations = $query->get();
@@ -87,6 +103,18 @@ class MessageController extends Controller
             abort(403);
         }
 
+        if ($user->role === 'agent' && $conversation->agent_deleted_at !== null) {
+            abort(403);
+        }
+
+        if ($user->role === 'applicant' && $conversation->applicant_deleted_at !== null) {
+            abort(403);
+        }
+
+        if ($user->role === 'agent' && $conversation->initiated_by === 'applicant' && !$conversation->messages()->exists()) {
+            abort(403);
+        }
+
         $conversation->load(['agent', 'applicant', 'generalProperty', 'messages' => function($q) {
             $q->orderBy('created_at', 'asc')->with('sender');
         }]);
@@ -99,14 +127,35 @@ class MessageController extends Controller
 
         // Fetch conversations for the sidebar just like index
         $query = Conversation::where(function ($q) use ($user) {
-                $q->where('agent_id', $user->id)
-                  ->orWhere('applicant_id', $user->id);
-            })
-            ->with(['agent', 'applicant', 'generalProperty', 'latestMessage'])
+                $q->where(function ($sq) use ($user) {
+                    $sq->where('agent_id', $user->id)->whereNull('agent_deleted_at');
+                })->orWhere(function ($sq) use ($user) {
+                    $sq->where('applicant_id', $user->id)->whereNull('applicant_deleted_at');
+                });
+            });
+
+        if ($user->role === 'agent') {
+            $query->where(function ($q) {
+                $q->where('initiated_by', 'agent')
+                  ->orWhereHas('messages');
+            });
+        }
+
+        $query->with(['agent', 'applicant', 'generalProperty', 'latestMessage'])
             ->orderBy('updated_at', 'desc');
 
-        $active = (clone $query)->where('status', 'active')->get();
-        $requests = (clone $query)->where('status', 'pending')->get();
+        $conversations = $query->get();
+
+        // Categorize for applicants
+        $active = $conversations;
+        $requests = collect();
+
+        if ($user->role === 'applicant') {
+            $active = $conversations->filter(fn($c) => $c->status === 'active')->values();
+            $requests = $conversations->filter(fn($c) => $c->status === 'pending' && $c->initiated_by === 'agent')->values();
+        } else {
+            $active = $conversations->values();
+        }
 
         return Inertia::render('Messages/Show', [
             'conversation' => $conversation,
@@ -157,8 +206,14 @@ class MessageController extends Controller
             'body' => $request->body,
         ]);
 
+        $conversation = Conversation::find($conversationId);
+        if ($user->role === 'agent' && $conversation->is_enquiry) {
+            $conversation->is_enquiry = false;
+            $conversation->save();
+        }
+
         // Explicitly update the conversation's updated_at timestamp to bring it to the top
-        Conversation::find($conversationId)->touch();
+        $conversation->touch();
 
         return back();
     }
@@ -175,5 +230,32 @@ class MessageController extends Controller
         $conversation->update(['status' => 'active']);
 
         return back()->with('message', 'Conversation accepted.');
+    }
+
+    /**
+     * Remove the specified conversation and all its messages.
+     */
+    public function destroy(Conversation $conversation): RedirectResponse
+    {
+        $user = Auth::user();
+
+        // Authorization check
+        if ($conversation->agent_id !== $user->id && $conversation->applicant_id !== $user->id) {
+            abort(403);
+        }
+
+        if ($user->role === 'agent') {
+            $conversation->agent_deleted_at = now();
+        } else {
+            $conversation->applicant_deleted_at = now();
+        }
+
+        if ($conversation->agent_deleted_at !== null && $conversation->applicant_deleted_at !== null) {
+            $conversation->delete();
+        } else {
+            $conversation->save();
+        }
+
+        return redirect()->route('messages.index')->with('success', 'Conversation deleted successfully.');
     }
 }

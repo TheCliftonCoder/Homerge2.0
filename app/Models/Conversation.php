@@ -12,6 +12,9 @@ class Conversation extends Model
         'general_property_id',
         'initiated_by',
         'status',
+        'is_enquiry',
+        'applicant_deleted_at',
+        'agent_deleted_at',
     ];
 
     public function agent()

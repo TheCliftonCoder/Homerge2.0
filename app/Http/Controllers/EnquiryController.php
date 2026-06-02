@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\GeneralProperty;
 use App\Models\PropertyEnquiry;
+use App\Models\Conversation;
+use App\Models\Message;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -12,22 +14,6 @@ use Inertia\Response;
 
 class EnquiryController extends Controller
 {
-    /**
-     * Display the user's property enquiries.
-     */
-    public function index(): Response
-    {
-        $enquiries = Auth::user()
-            ->propertyEnquiries()
-            ->with(['property.agent', 'property.images'])
-            ->latest()
-            ->get();
-
-        return Inertia::render('Applicant/Enquiries', [
-            'enquiries' => $enquiries,
-        ]);
-    }
-
     /**
      * Store a new property enquiry.
      */
@@ -39,59 +25,70 @@ class EnquiryController extends Controller
             'contact_phone' => 'nullable|string|max:20',
         ]);
 
-        // Check if user already has an enquiry for this property
-        $existingEnquiry = Auth::user()
-            ->propertyEnquiries()
+        $user = Auth::user();
+
+        // Check if user already has an active enquiry for this property
+        $existingEnquiry = Conversation::where('applicant_id', $user->id)
             ->where('general_property_id', $property->id)
+            ->where('is_enquiry', true)
             ->exists();
 
         if ($existingEnquiry) {
             return back()->with('error', 'You have already enquired about this property');
         }
 
+        // Find or create conversation
+        $conversation = Conversation::firstOrCreate(
+            [
+                'agent_id' => $property->agent_id,
+                'applicant_id' => $user->id,
+                'general_property_id' => $property->id,
+            ],
+            [
+                'initiated_by' => 'applicant',
+                'status' => 'active',
+            ]
+        );
+
+        // Restore if soft-deleted, and mark as active enquiry
+        $conversation->update([
+            'is_enquiry' => true,
+            'applicant_deleted_at' => null,
+            'agent_deleted_at' => null,
+        ]);
+
+        // Construct the message text
+        $msgBody = "Viewing Request for " . $property->name;
+        if (!empty($validated['preferred_date'])) {
+            $msgBody .= "\nPreferred Date: " . date('d/m/Y H:i', strtotime($validated['preferred_date']));
+        }
+        if (!empty($validated['contact_phone'])) {
+            $msgBody .= "\nContact Phone: " . $validated['contact_phone'];
+        }
+        if (!empty($validated['message'])) {
+            $msgBody .= "\nMessage: " . $validated['message'];
+        }
+
+        // Create the message
+        Message::create([
+            'conversation_id' => $conversation->id,
+            'sender_id' => $user->id,
+            'body' => $msgBody,
+        ]);
+
+        // Touch conversation to update updated_at timestamp
+        $conversation->touch();
+
+        // Also save a record in property_enquiries to maintain compatibility for cards/analytics/searches
         PropertyEnquiry::create([
-            'user_id' => Auth::id(),
+            'user_id' => $user->id,
             'general_property_id' => $property->id,
             'message' => $validated['message'] ?? null,
             'preferred_date' => $validated['preferred_date'] ?? null,
             'contact_phone' => $validated['contact_phone'] ?? null,
         ]);
 
-        return back()->with('success', 'Your enquiry has been sent to the agent');
-    }
-
-    /**
-     * Cancel/delete an enquiry.
-     */
-    public function destroy(PropertyEnquiry $enquiry): RedirectResponse
-    {
-        // Authorization check
-        if ($enquiry->user_id !== Auth::id()) {
-            abort(403, 'Unauthorized action.');
-        }
-
-        $enquiry->delete();
-
-        return back()->with('success', 'Enquiry cancelled successfully');
-    }
-
-    /**
-     * Display enquiries for the agent's properties.
-     */
-    public function agentEnquiries(): Response
-    {
-        $user = Auth::user();
-
-        // Get all enquiries for properties owned by this agent
-        $enquiries = PropertyEnquiry::whereHas('property', function ($query) use ($user) {
-            $query->where('agent_id', $user->id);
-        })
-            ->with(['user', 'property'])
-            ->latest()
-            ->get();
-
-        return Inertia::render('Agent/Enquiries', [
-            'enquiries' => $enquiries,
-        ]);
+        return redirect()->route('messages.show', $conversation->id)
+            ->with('success', 'Your viewing enquiry has been sent to the agent');
     }
 }

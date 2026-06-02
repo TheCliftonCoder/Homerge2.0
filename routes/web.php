@@ -47,8 +47,6 @@ Route::middleware('auth')->group(function () {
             Route::post('/properties/{property}/favourite', [\App\Http\Controllers\FavouriteController::class , 'toggle'])->name('properties.favourite.toggle');
             Route::get('/favourites', [\App\Http\Controllers\FavouriteController::class , 'index'])->name('favourites.index');
             Route::post('/properties/{property}/enquire', [\App\Http\Controllers\EnquiryController::class , 'store'])->name('properties.enquire');
-            Route::get('/enquiries', [\App\Http\Controllers\EnquiryController::class , 'index'])->name('enquiries.index');
-            Route::delete('/enquiries/{enquiry}', [\App\Http\Controllers\EnquiryController::class , 'destroy'])->name('enquiries.destroy');
             Route::get('/searches', [\App\Http\Controllers\SavedSearchController::class, 'index'])->name('searches.index');
             Route::post('/searches', [\App\Http\Controllers\SavedSearchController::class, 'store'])->name('searches.store');
             Route::patch('/searches/{savedSearch}', [\App\Http\Controllers\SavedSearchController::class, 'update'])->name('searches.update');
@@ -58,7 +56,6 @@ Route::middleware('auth')->group(function () {
 
         // Agent-only routes
         Route::middleware('role:agent')->group(function () {
-            Route::get('/my-enquiries', [\App\Http\Controllers\EnquiryController::class , 'agentEnquiries'])->name('agent.enquiries');
             Route::get('/applicant-cards', [\App\Http\Controllers\ApplicantCardController::class , 'index'])->name('applicant.cards');
             Route::get('/applicant-search', [\App\Http\Controllers\ApplicantSearchController::class , 'index'])->name('agent.applicant-search');
             Route::post('/applicant-search/parse-prompt', [\App\Http\Controllers\PromptParserController::class , 'parseApplicantPrompt'])->name('agent.applicant-search.parse-prompt');
@@ -70,6 +67,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/messages/{conversation}', [\App\Http\Controllers\MessageController::class , 'show'])->name('messages.show');
         Route::post('/messages', [\App\Http\Controllers\MessageController::class , 'store'])->name('messages.store');
         Route::post('/messages/{conversation}/accept', [\App\Http\Controllers\MessageController::class , 'accept'])->name('messages.accept');
+        Route::delete('/messages/{conversation}', [\App\Http\Controllers\MessageController::class , 'destroy'])->name('messages.destroy');
     });
 
 // Public property details - MUST come after /properties/create to avoid conflict
